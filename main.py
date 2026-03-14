@@ -1,30 +1,42 @@
 import os
-import asyncio
+import time
 import sys
 import requests
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 
-# --- 配置 ---
-BASE_URL = "https://dash.icehost.pl/server/bfe8ebd5" 
+# --- 核心配置 ---
+SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 
 def send_tg_msg(message):
+    """发送纯文字通知"""
     tg_token = os.environ.get("TG_TOKEN")
     tg_id = os.environ.get("TG_CHAT_ID")
-    if not tg_token or not tg_id:
-        print("⚠️ TG 配置缺失，跳过通知")
-        return
+    if not tg_token or not tg_id: return
     url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
     try:
-        res = requests.post(url, json={"chat_id": tg_id, "text": message}, timeout=15)
-        print(f"TG 响应: {res.status_code}")
+        requests.post(url, json={"chat_id": tg_id, "text": message}, timeout=10)
     except Exception as e:
-        print(f"TG 发送异常: {e}")
+        print(f"TG 文字通知失败: {e}")
 
-async def run_task():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-        context = await browser.new_context(
+def send_tg_photo(photo_path, caption):
+    """发送图片通知"""
+    tg_token = os.environ.get("TG_TOKEN")
+    tg_id = os.environ.get("TG_CHAT_ID")
+    if not tg_token or not tg_id or not os.path.exists(photo_path):
+        return
+    url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
+    try:
+        with open(photo_path, 'rb') as photo:
+            res = requests.post(url, data={'chat_id': tg_id, 'caption': caption}, files={'photo': photo}, timeout=20)
+            print(f"TG 图片发送状态: {res.status_code}")
+    except Exception as e:
+        print(f"TG 图片通知失败: {e}")
+
+def run_renew():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        context = browser.new_context(
             viewport={'width': 1280, 'height': 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
@@ -33,8 +45,7 @@ async def run_task():
         raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
         if raw_cookies:
             formatted_cookies = []
-            clean_raw = raw_cookies.replace('\n', '').replace('\r', '').strip()
-            for item in clean_raw.split(';'):
+            for item in raw_cookies.strip().split(';'):
                 if '=' in item:
                     name, value = item.strip().split('=', 1)
                     formatted_cookies.append({
@@ -42,60 +53,50 @@ async def run_task():
                         'domain': 'dash.icehost.pl', 'path': '/',
                         'secure': True, 'sameSite': 'Lax'
                     })
-            await context.add_cookies(formatted_cookies)
+            context.add_cookies(formatted_cookies)
 
-        page = await context.new_page()
-        # 设置全局超时为 90 秒
+        page = context.new_page()
         page.set_default_timeout(90000)
 
         try:
-            print(f"🚀 正在访问 (尝试绕过网络波动): {BASE_URL}")
-            # 关键修改：将 networkidle 改为 domcontentloaded，加快响应
-            await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=90000)
-            
-            # 给一点额外缓冲时间让脚本加载
-            await asyncio.sleep(10)
+            print(f"🚀 访问中: {SERVER_URL}")
+            page.goto(SERVER_URL, wait_until="domcontentloaded")
+            time.sleep(10) 
 
-            # 检查是否跳到了登录页
-            if await page.query_selector('input[name="username"]'):
-                print("⚠️ Cookie 失效，尝试账号密码登录...")
-                email = os.environ.get("PTERODACTYL_EMAIL")
-                pw = os.environ.get("PTERODACTYL_PASSWORD")
-                if email and pw:
-                    await page.fill('input[name="username"]', email)
-                    await page.fill('input[name="password"]', pw)
-                    await page.click('button[type="submit"]')
-                    await page.wait_for_load_state("domcontentloaded")
-                    await asyncio.sleep(5)
-
-            # 寻找并点击续期按钮
-            print(f"🔍 寻找按钮: {RENEW_BUTTON_TEXT}")
-            # 尝试通过 text 寻找按钮
             btn = page.get_by_text(RENEW_BUTTON_TEXT)
             
-            if await btn.count() > 0:
-                await btn.first.click()
-                success_msg = "✅ IceHost 续期动作已触发！"
-                print(success_msg)
-                send_tg_msg(success_msg)
-                await asyncio.sleep(5)
-                await page.screenshot(path="success.png")
+            if btn.count() > 0:
+                btn.first.click()
+                time.sleep(5)
+                # 截图并发送成功通知
+                shot_path = "success.png"
+                page.screenshot(path=shot_path)
+                send_tg_photo(shot_path, "✅ IceHost 续期成功！已点击按钮。")
+                return True
             else:
-                # 日期判定逻辑：如果找不到按钮，看看页面上是不是已经有 2026 年的日期了
-                content = await page.content()
-                if "2026-03" in content:
-                    print("ℹ️ 未发现按钮，但页面显示已续期。")
+                content = page.content()
+                if "2026-03" in content: # 这里的年份会随时间变化
+                    print("ℹ️ 已处于续期状态")
+                    # 如果你想“已经续期”也发截图，取消下面两行的注释
+                    # page.screenshot(path="already.png")
+                    # send_tg_photo("already.png", "ℹ️ IceHost: 当前无需续期，页面已是最新状态。")
+                    return True
                 else:
-                    print("❌ 未找到按钮，且未发现续期成功迹象。")
-                await page.screenshot(path="not_found.png")
+                    shot_path = "not_found.png"
+                    page.screenshot(path=shot_path)
+                    send_tg_photo(shot_path, "❌ IceHost: 未发现按钮，请检查 Cookie 或页面。")
+                    return False
 
         except Exception as e:
-            err_msg = f"🚨 运行超时或出错: {str(e)[:100]}"
+            err_msg = f"🚨 IceHost 脚本异常: {str(e)[:100]}"
             print(err_msg)
-            send_tg_msg(err_msg)
-            await page.screenshot(path="error.png")
+            shot_path = "error.png"
+            page.screenshot(path=shot_path)
+            send_tg_photo(shot_path, err_msg)
+            return False
         finally:
-            await browser.close()
+            browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_task())
+    if not run_renew():
+        sys.exit(1)
