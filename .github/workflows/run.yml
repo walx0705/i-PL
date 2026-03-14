@@ -1,7 +1,7 @@
-name: IceHost Ultimate Renew
+name: IceHost Hy2 Final
 on:
   schedule:
-    - cron: '10 */5 * * *'
+    - cron: '15 */5 * * *'
   workflow_dispatch:
 jobs:
   run-bot:
@@ -11,35 +11,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          # 删除了 cache: 'pip'，避免报错
 
-      - name: Setup Xray Proxy
+      - name: Setup Hysteria2 Proxy
         run: |
-          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -o Xray-linux-64.zip
-          cat <<EOF > config.json
-          {
-            "inbounds": [{"port": 1080, "protocol": "socks", "settings": {"auth": "noauth"}}],
-            "outbounds": [{
-              "protocol": "vless",
-              "settings": {
-                "vnext": [{
-                  "address": "mfa.gov.ua",
-                  "port": 443,
-                  "users": [{"id": "20e6e496-cf19-45c8-b883-14f5e11cd9f1", "encryption": "none"}]
-                }]
-              },
-              "streamSettings": {
-                "network": "ws",
-                "security": "tls",
-                "tlsSettings": {"serverName": "wzr.wjq.cc.cd"},
-                "wsSettings": {"path": "/vless-argo?ed=256", "headers": {"Host": "wzr.wjq.cc.cd"}}
-              }
-            }]
-          }
+          # 下载官方 Hy2 二进制
+          wget https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hy2
+          chmod +x hy2
+          
+          # 写入你的节点配置
+          cat <<EOF > hy2_config.yaml
+          server: 83.168.94.238:30045
+          auth: 9afd1229-b893-40c1-84dd-51e7ce204913
+          tls:
+            sni: www.bing.com
+            insecure: true
+          socks5:
+            listen: 127.0.0.1:1080
+          transport:
+            type: udp
           EOF
-          ./xray run -c config.json &
-          sleep 10
+          
+          # 后台运行并隐藏输出
+          ./hy2 client -c hy2_config.yaml > /dev/null 2>&1 &
+          sleep 12 # 留出时间进行握手
 
       - name: Install Browser
         run: |
