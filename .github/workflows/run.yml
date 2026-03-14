@@ -1,7 +1,7 @@
-name: IceHost Hy2 Final
+name: IceHost Force Renew
 on:
   schedule:
-    - cron: '15 */5 * * *'
+    - cron: '30 */5 * * *'
   workflow_dispatch:
 jobs:
   run-bot:
@@ -11,8 +11,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Setup Hysteria2 Proxy
+      - name: Setup Hy2
         run: |
           curl -Lo hy2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
           chmod +x hy2
@@ -26,17 +25,14 @@ jobs:
             listen: 127.0.0.1:1080
           EOF
           ./hy2 client -c config.yaml > /dev/null 2>&1 &
-          sleep 12
-
-      - name: Install Dependencies
+          sleep 15
+      - name: Install & Run
         run: |
           pip install playwright requests
           playwright install chromium
-          
-      - name: Run Script
+          python main.py
         env:
           ICE_EMAIL: ${{ secrets.ICE_EMAIL }}
           ICE_PASSWORD: ${{ secrets.ICE_PASSWORD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python main.py
