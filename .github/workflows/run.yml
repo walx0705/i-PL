@@ -1,18 +1,18 @@
 name: IceHost Auto Renew Enhanced
 
 on:
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *' # 每 2 小时运行一次 (UTC 时间)
+    - cron: '0 */2 * * *' # 每 2 小时运行一次
 
 jobs:
   renew_job:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 允许脚本更新 heartbeat 记录
+      contents: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -25,9 +25,8 @@ jobs:
           pip install playwright requests
           playwright install --with-deps chromium
 
-      - name: Run Auto Renew Script
+      - name: Run Script
         env:
-          # 核心凭据：请确保在 Settings -> Secrets 中已配置这 5 个变量
           PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
@@ -35,12 +34,12 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python -u main.py
 
-      - name: Update Heartbeat and Commit
-        if: always() # 无论成功失败都记录运行时间，防止 Action 停掉
+      - name: Update Heartbeat
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Last execution: $(date)" > last_run.txt
+          echo "Last Run: $(date)" > last_run.txt
           git add last_run.txt
-          git commit -m "📅 自动更新运行状态 [$(date)]" || echo "无变更需提交"
+          git commit -m "📅 Heartbeat Update" || echo "No changes"
           git push
