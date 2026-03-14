@@ -1,9 +1,9 @@
-name: IceHost Auto Renew Enhanced
+name: IceHost Proxy Renew
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *' # 每 2 小时运行一次
+    - cron: '0 */2 * * *'
 
 jobs:
   renew_job:
@@ -14,6 +14,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Hysteria
+        run: |
+          wget https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,12 +39,12 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python -u main.py
 
-      - name: Update Heartbeat
+      - name: Heartbeat
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Last Run: $(date)" > last_run.txt
+          echo "Proxy Run: $(date)" > last_run.txt
           git add last_run.txt
-          git commit -m "📅 Heartbeat Update" || echo "No changes"
+          git commit -m "📅 Proxy Heartbeat" || echo "No changes"
           git push
