@@ -4,7 +4,7 @@ import subprocess
 import requests
 from playwright.sync_api import sync_playwright
 
-# --- 配置区 ---
+# --- 核心配置 ---
 SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
 LOGIN_URL = "https://dash.icehost.pl/login"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
@@ -30,11 +30,11 @@ def run_renew():
     time.sleep(5)
 
     with sync_playwright() as p:
-        # 通过波兰节点代理，完美避开 Connection Blocked
+        # 强制使用波兰代理，彻底解决 Blocked 问题
         browser = p.chromium.launch(headless=True, proxy={"server": "socks5://127.0.0.1:1080"})
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         
-        # 注入去空格版 Cookie
+        # 注入 Cookie
         raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
         if raw_cookies:
             for item in raw_cookies.strip().split(';'):
@@ -44,13 +44,12 @@ def run_renew():
 
         page = context.new_page()
         try:
-            print("🌐 正在通过代理访问管理后台...")
+            print("🌐 代理访问中...")
             page.goto(SERVER_URL, wait_until="commit")
             time.sleep(20)
 
-            # 自动补位登录：如果 Cookie 失效，脚本会自动输入账号密码
+            # 自动登录逻辑
             if "login" in page.url or page.locator('input[name="username"]').is_visible():
-                print("🔑 Cookie失效，正在自动登录...")
                 page.goto(LOGIN_URL)
                 page.fill('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
                 page.fill('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
@@ -61,30 +60,28 @@ def run_renew():
 
             btn = page.locator(f'button:has-text("{RENEW_BUTTON_TEXT}")').first
             if btn.count() > 0:
-                print("🎯 发现按钮，尝试点击...")
                 btn.click(force=True)
-                time.sleep(8) # 等待上方红/绿提示框弹出
+                time.sleep(8) # 等待反馈弹窗
 
-                # --- 智能识别上方红绿弹窗 ---
-                # 绿色弹窗通常包含 success 或 bg-green 类；红色包含 danger 或 bg-red 类
-                success_box = page.locator(".alert-success, .bg-green-500, .text-green-600").first
-                error_box = page.locator(".alert-danger, .bg-red-500, .text-red-600").first
+                # --- 智能红绿字识别 ---
+                # 绿色关键词: Pomyślnie (成功)
+                # 红色关键词: Nie możesz (不能)
+                success_box = page.get_by_text("Pomyślnie", exact=False).first
+                error_box = page.get_by_text("Nie możesz", exact=False).first
 
                 if success_box.count() > 0 and success_box.is_visible():
-                    final_caption = f"✅ **续期成功(绿字)！**\n提示：{success_box.inner_text()}"
+                    final_caption = "✅ **通过代理续期成功**\n(检测到绿色弹窗)"
                 elif error_box.count() > 0 and error_box.is_visible():
-                    # 这里对应你说的“没到时间提示红字”
-                    final_caption = f"❌ **操作受限(红字)**\n反馈：{error_box.inner_text()}\n(大概率是CD未到，脚本将在3小时后重试)"
+                    final_caption = "❌ **未到续期时间**\n(检测到红色弹窗)"
                 else:
-                    final_caption = "❓ 已点击按钮，但页面未显示红绿反馈，请根据截图判断。"
+                    final_caption = "❓ 已点击按钮，但未捕捉到红绿字内容，请检查截图。"
                 
                 page.screenshot(path=last_shot)
             else:
                 page.screenshot(path=last_shot)
-                final_caption = "🔍 页面已加载，但未发现续期按钮，请检查是否已封禁或改版。"
-
+                final_caption = "🔍 页面已加载，但没看到续期按钮。"
         except Exception as e:
-            final_caption = f"🚨 脚本异常: {str(e)[:30]}"
+            final_caption = f"🚨 运行异常: {str(e)[:30]}"
             page.screenshot(path=last_shot)
         finally:
             send_tg_photo(last_shot, final_caption)
