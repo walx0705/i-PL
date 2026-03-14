@@ -1,16 +1,16 @@
 name: IceHost Auto Renew
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动触发测试
   schedule:
-    # 每 90 分钟运行一次
+    # 每 90 分钟运行一次，确保续期时间不断堆叠
     - cron: '0 0,3,6,9,12,15,18,21 * * *'
     - cron: '30 1,4,7,10,13,16,19,22 * * *'
 
 jobs:
   renew_job:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 15 # 防止脚本卡死占用额度
 
     steps:
       - name: Checkout repository
@@ -28,7 +28,7 @@ jobs:
 
       - name: Run Auto Renew Script
         env:
-          # 此处必须与你 GitHub Secrets 里的名字一模一样
+          # 这里的名字必须和你 GitHub Secrets 里的完全一致
           PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
@@ -36,10 +36,10 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python -u main.py
 
-      - name: Upload Artifacts
-        if: always()
+      - name: Upload Artifacts (Screenshots)
+        if: always() # 无论成功失败都上传截图，方便排查
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
+          name: execution-screenshots
           path: "*.png"
           retention-days: 3
