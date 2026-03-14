@@ -1,12 +1,10 @@
 import os
 import time
-import sys
 import requests
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
-# --- 配置 ---
 SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
-LOGIN_URL = "https://dash.icehost.pl/login"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 
 def send_tg_photo(photo_path, caption):
@@ -20,14 +18,19 @@ def send_tg_photo(photo_path, caption):
     except: pass
 
 def run_renew():
-    last_shot = "current_status.png"
-    final_caption = "⚠️ 运行结束"
-    
+    last_shot = "final_status.png"
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        # 启动浏览器时禁用自动化特征
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
         
-        # 1. 优先注入现有 Cookie
+        # 应用隐身脚本
+        stealth_sync(page)
+
+        # 注入你刚去空格后的最新 Cookie
         raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
         if raw_cookies:
             for item in raw_cookies.strip().split(';'):
@@ -35,42 +38,32 @@ def run_renew():
                     name, value = item.strip().split('=', 1)
                     context.add_cookies([{'name': name.strip(), 'value': value.strip(), 'domain': 'dash.icehost.pl', 'path': '/', 'secure': True}])
 
-        page = context.new_page()
-        
         try:
-            print("🚀 尝试进入面板...")
-            page.goto(SERVER_URL, wait_until="commit")
-            time.sleep(20) # 等待 CF 和渲染
+            # 增加访问前的随机延迟，降低被封概率
+            print("🚀 正在尝试绕过防火墙...")
+            page.goto(SERVER_URL, wait_until="commit", timeout=90000)
+            
+            # 暴力等待 Cloudflare 5秒盾自动放行
+            time.sleep(30) 
 
-            # 2. 【核心逻辑】检测是否需要自动登录更新 Cookie
-            if "login" in page.url or page.locator('input[name="username"]').is_visible():
-                print("🔑 Cookie 已失效，正在尝试账号密码自动登录...")
-                page.goto(LOGIN_URL)
-                page.fill('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
-                page.fill('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
-                page.click('button[type="submit"]')
-                time.sleep(10)
-                # 登录后重新跳转回服务器页面
-                page.goto(SERVER_URL)
-                time.sleep(15)
+            # 截图看一眼是 Blocked 还是已经进入
+            page.screenshot(path=last_shot)
+            
+            if "Connection Blocked" in page.content():
+                send_tg_photo(last_shot, "❌ 依然被 IP 封锁。建议停止运行 4 小时后再试。")
+                return
 
-            # 3. 寻找并点击续期按钮
             btn = page.locator(f'button:has-text("{RENEW_BUTTON_TEXT}")').first
-            if btn.count() > 0 and btn.is_visible():
-                btn.evaluate("el => el.style.border = '10px solid red'")
+            if btn.count() > 0:
                 btn.click(force=True)
                 time.sleep(5)
-                page.screenshot(path=last_shot)
-                final_caption = "✅ 续期动作已执行！(已自动处理登录态)"
+                send_tg_photo(last_shot, "✅ 破盾成功并点击了按钮！")
             else:
-                page.screenshot(path=last_shot)
-                final_caption = "❌ 依然没看到按钮，请检查截图。"
-
+                send_tg_photo(last_shot, "🔍 没看到按钮，看截图是不是卡在验证码了？")
         except Exception as e:
-            final_caption = f"🚨 异常: {str(e)[:50]}"
             page.screenshot(path=last_shot)
+            send_tg_photo(last_shot, f"🚨 运行崩溃: {str(e)[:50]}")
         finally:
-            send_tg_photo(last_shot, final_caption)
             browser.close()
 
 if __name__ == "__main__":
