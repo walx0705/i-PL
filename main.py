@@ -1,9 +1,10 @@
 import os
 import asyncio
 import requests
+import random
 from playwright.async_api import async_playwright
 
-# --- 配置 ---
+# --- 基础配置 ---
 ICE_EMAIL = os.environ.get('ICE_EMAIL')
 ICE_PASSWORD = os.environ.get('ICE_PASSWORD')
 TG_TOKEN = os.environ.get('TG_BOT_TOKEN')
@@ -13,86 +14,67 @@ PROXY_SERVER = "socks5://127.0.0.1:1080"
 def send_tg_msg(message):
     if TG_TOKEN and TG_CHAT_ID:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = {"chat_id": TG_CHAT_ID, "text": f"🤖 **IceHost 最终盲填版**\n\n{message}", "parse_mode": "Markdown"}
+        data = {"chat_id": TG_CHAT_ID, "text": f"🤖 **IceHost 物理按键模拟版**\n\n{message}", "parse_mode": "Markdown"}
         try: requests.post(url, data=data, timeout=10)
         except: pass
 
 async def run():
     async with async_playwright() as p:
+        # 1. 深度指纹混淆启动
         browser = await p.chromium.launch(headless=True, proxy={"server": PROXY_SERVER})
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            viewport={'width': 393, 'height': 852},
-            is_mobile=True
+            viewport={'width': 1280, 'height': 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         
-        # 彻底抹除 WebDriver 特征
+        # 抹除所有机器人特征
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         page = await context.new_page()
-        debug_pic = "force_result.png"
+        debug_pic = "keyboard_attempt.png"
 
         try:
-            print("正在连接登录页面...")
-            await page.goto("https://dash.icehost.pl/login", wait_until="commit", timeout=90000)
+            print("正在尝试穿透 Cloudflare...")
+            await page.goto("https://dash.icehost.pl/login", wait_until="networkidle", timeout=90000)
             
-            # --- 循环探测注入 (解决 Cannot set properties of null) ---
-            login_success = False
-            for i in range(30):  # 最多等待 60 秒 (2s * 30)
-                print(f"等待输入框出现... ({i+1}/30)")
-                # 使用 JS 探测并填表
-                try:
-                    res = await page.evaluate(f"""
-                        (function() {{
-                            const e = document.querySelector('input[name="email"]');
-                            const p = document.querySelector('input[name="password"]');
-                            const b = document.querySelector('button[type="submit"]');
-                            if (e && p && b) {{
-                                e.value = '{ICE_EMAIL}';
-                                p.value = '{ICE_PASSWORD}';
-                                b.click();
-                                return "OK";
-                            }}
-                            return "WAIT";
-                        }})()
-                    """)
-                    if res == "OK":
-                        print("✅ 探测到输入框，已强行注入！")
-                        login_success = True
-                        break
-                except:
-                    pass
-                await asyncio.sleep(2)
+            # 2. 暴力等待 30 秒，确保 Cloudflare 盾牌跑完
+            await asyncio.sleep(30)
             
-            if not login_success:
-                await page.screenshot(path=debug_pic)
-                send_tg_msg("❌ 60秒内未发现登录框，可能是被 Cloudflare 彻底拦截了。")
-                return
-
-            # 等待进入后台
+            # 3. 键盘模拟大法：不管能不能看到框，直接一通操作
+            print("执行物理键盘模拟输入...")
+            # 连点 5 次 Tab 确保焦点进入表单（根据 IceHost 页面结构）
+            for _ in range(5):
+                await page.keyboard.press("Tab")
+                await asyncio.sleep(0.5)
+            
+            # 输入邮箱
+            await page.keyboard.type(ICE_EMAIL, delay=100)
+            await page.keyboard.press("Tab")
+            await asyncio.sleep(0.5)
+            
+            # 输入密码
+            await page.keyboard.type(ICE_PASSWORD, delay=100)
+            await page.keyboard.press("Enter")
+            
+            print("已通过键盘提交，等待跳转...")
+            
+            # 4. 验证是否成功进入 Dashboard
             try:
                 await page.wait_for_url("**/dashboard", timeout=40000)
-                print("🎉 登录成功！")
+                print("🎉 物理模拟成功！已登录。")
                 
                 # 续期流程
                 await page.goto("https://dash.icehost.pl/server/bfe8ebd5")
                 await asyncio.sleep(10)
-                
-                # 点击 6h
-                renew_btn = page.locator('button:has-text("6h"), a:has-text("6h")').first
-                if await renew_btn.is_visible():
-                    await renew_btn.click()
-                    await asyncio.sleep(5)
-                    send_tg_msg("🚀 **全自动强攻续期成功！**")
-                else:
-                    await page.screenshot(path=debug_pic)
-                    send_tg_msg("⚠️ 登录成功，但未发现续期按钮。")
+                await page.get_by_text("6h").click()
+                send_tg_msg("🚀 **物理按键模拟填表成功，续期已完成！**")
             except:
                 await page.screenshot(path=debug_pic)
-                send_tg_msg("❌ 填表已提交，但未能进入后台，请看截图。")
+                send_tg_msg("❌ 键盘填表提交后未能跳转。Cloudflare 可能直接拒绝了非人工点击的提交。")
 
         except Exception as e:
-            send_tg_msg(f"🔥 最终强攻异常: `{str(e)[:100]}`")
+            await page.screenshot(path=debug_pic)
+            send_tg_msg(f"🔥 物理模拟报错: `{str(e)[:100]}`")
         finally:
             await browser.close()
 
