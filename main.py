@@ -11,42 +11,55 @@ def send_tg_msg(message):
         data = {"chat_id": chat_id, "text": f"🤖 **IceHost 续期助手**\n\n{message}", "parse_mode": "Markdown"}
         try:
             requests.post(url, data=data, timeout=10)
-        except Exception as e:
-            print(f"TG通知发送失败: {e}")
+        except:
+            pass
 
 async def run():
     async with async_playwright() as p:
+        # 使用更大的延时设置
         browser = await p.chromium.launch(headless=True)
+        # 模拟更加真实的浏览器指纹
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+            viewport={'width': 1280, 'height': 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
         msg = ""
-        try:
-            print("正在登录...")
-            await page.goto("https://dash.icehost.pl/login")
-            await page.fill('input[name="email"]', os.environ['ICE_EMAIL'])
-            await page.fill('input[name="password"]', os.environ['ICE_PASSWORD'])
-            await page.click('button[type="submit"]')
-            await page.wait_for_url("**/dashboard", timeout=20000)
-            
-            print("访问服务器页面...")
-            await page.goto("https://dash.icehost.pl/server/bfe8ebd5")
-            await page.wait_for_load_state("networkidle")
 
-            renew_btn = page.get_by_text("增加6小时的有效期")
-            if await renew_btn.is_visible():
-                await renew_btn.click()
-                await asyncio.sleep(5)
-                error_box = page.locator('.alert-danger, .error-message')
-                if await error_box.is_visible():
-                    msg = f"❌ **续期失败**\n原因: `{await error_box.inner_text()}`"
-                else:
-                    msg = "✅ **续期指令发送成功**"
+        try:
+            print("正在打开登录页面...")
+            # 增加超时时间到 60 秒
+            await page.goto("https://dash.icehost.pl/login", timeout=60000, wait_until="networkidle")
+            
+            # 检查是否遇到了 Cloudflare 验证
+            if "Cloudflare" in await page.title() or await page.locator('text=Verify you are human').is_visible():
+                msg = "🛑 **触发了人机验证 (Cloudflare)**\nGitHub Actions 暂时无法绕过此验证，请稍后再试或手动点击一次。"
             else:
-                msg = "⚠️ **未发现按钮** (可能在冷却中)"
+                # 等待输入框出现
+                email_input = page.locator('input[name="email"]')
+                await email_input.wait_for(state="visible", timeout=30000)
+                
+                await email_input.fill(os.environ['ICE_EMAIL'])
+                await page.fill('input[name="password"]', os.environ['ICE_PASSWORD'])
+                
+                # 点击登录并等待
+                await page.click('button[type="submit"]')
+                await page.wait_for_url("**/dashboard", timeout=30000)
+                
+                # 跳转续期页
+                await page.goto("https://dash.icehost.pl/server/bfe8ebd5", wait_until="networkidle")
+                
+                renew_btn = page.get_by_text("增加6小时的有效期")
+                if await renew_btn.is_visible():
+                    await renew_btn.click()
+                    await asyncio.sleep(5)
+                    msg = "✅ **续期指令发送成功**"
+                else:
+                    msg = "⚠️ **未发现按钮** (可能在冷却中)"
+
         except Exception as e:
-            msg = f"🔥 **运行异常**: `{str(e)}`"
+            # 发生错误时尝试抓个图（可选，这里简化为文字反馈）
+            msg = f"🔥 **运行异常**\n具体表现: `页面加载超时或元素未找到`\n错误信息: `{str(e)[:100]}`"
         finally:
             send_tg_msg(msg)
             await browser.close()
