@@ -44,7 +44,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Last run: $(date)" > last_run.txt
+          echo "Last execution: $(date)" > last_run.txt
           git add last_run.txt
-          git commit -m "📅 Heartbeat" || echo "No changes"
+          git commit -m "📅 Notification Cleaned" || echo "No changes"
           git push
