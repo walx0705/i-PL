@@ -1,21 +1,62 @@
-name: IceHost Auto Renew
+name: IceHost Auto Renew with VLESS
+
 on:
   schedule:
-    - cron: '0 */5 * * *'
-  workflow_dispatch:
+    # 每 5 小时运行一次（IceHost 续期通常为 6 小时，5 小时更保险）
+    - cron: '15 */5 * * *'
+  workflow_dispatch: # 支持手动触发
+
 jobs:
-  run-bot:
+  renew:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install
+
+      - name: Install & Start Xray Proxy
+        run: |
+          # 下载并安装 Xray 核心
+          bash <(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip)
+          unzip -o Xray-linux-64.zip
+          
+          # 写入 VLESS 节点配置（已适配你提供的节点参数）
+          cat <<EOF > config.json
+          {
+            "inbounds": [{"port": 1080, "protocol": "socks", "settings": {"auth": "noauth"}}],
+            "outbounds": [{
+              "protocol": "vless",
+              "settings": {
+                "vnext": [{
+                  "address": "mfa.gov.ua",
+                  "port": 443,
+                  "users": [{"id": "20e6e496-cf19-45c8-b883-14f5e11cd9f1", "encryption": "none"}]
+                }]
+              },
+              "streamSettings": {
+                "network": "ws",
+                "security": "tls",
+                "tlsSettings": {"serverName": "wzr.wjq.cc.cd"},
+                "wsSettings": {"path": "/vless-argo?ed=256", "headers": {"Host": "wzr.wjq.cc.cd"}}
+              }
+            }]
+          }
+          EOF
+          
+          # 在后台启动 Xray 代理
+          ./xray run -c config.json &
+          sleep 5
+
+      - name: Install Dependencies
         run: |
           pip install playwright requests
           playwright install chromium
-      - name: Execute
+
+      - name: Run Renewal Script
         env:
           ICE_EMAIL: ${{ secrets.ICE_EMAIL }}
           ICE_PASSWORD: ${{ secrets.ICE_PASSWORD }}
