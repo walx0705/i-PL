@@ -1,10 +1,11 @@
-name: IceHost Hy2 Final
+name: IceHost Renew System
 on:
   schedule:
-    - cron: '15 */5 * * *'
-  workflow_dispatch:
+    - cron: '40 */5 * * *' # 每 5.5 小时运行一次
+  workflow_dispatch:      # 允许手动触发运行
+
 jobs:
-  run-bot:
+  renew-task:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,35 +13,33 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Setup Hysteria2 Proxy
+      - name: Setup Hysteria2 Tunnel
         run: |
-          # 下载最新的 Hy2 二进制
-          wget https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hy2
+          # 快速下载 Hy2 客户端
+          curl -Lo hy2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
           chmod +x hy2
           
-          # 写入你的节点配置
-          cat <<EOF > hy2_config.yaml
+          # 写入节点配置 (SNI 已优化)
+          cat <<EOF > config.yaml
           server: 83.168.94.238:30045
           auth: 9afd1229-b893-40c1-84dd-51e7ce204913
           tls:
-            sni: www.bing.com
+            sni: dash.icehost.pl
             insecure: true
           socks5:
             listen: 127.0.0.1:1080
-          transport:
-            type: udp
           EOF
           
-          # 后台运行 Hy2
-          ./hy2 client -c hy2_config.yaml > /dev/null 2>&1 &
-          sleep 12
+          # 后台静默启动，并将日志重定向以防泄密
+          ./hy2 client -c config.yaml > /dev/null 2>&1 &
+          sleep 12 # 等待握手完成
 
-      - name: Install Browser
+      - name: Install Dependencies
         run: |
           pip install playwright requests
           playwright install chromium
           
-      - name: Run Script
+      - name: Run Main Script
         env:
           ICE_EMAIL: ${{ secrets.ICE_EMAIL }}
           ICE_PASSWORD: ${{ secrets.ICE_PASSWORD }}
