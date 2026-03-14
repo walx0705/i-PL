@@ -1,43 +1,48 @@
-name: IceHost Renew Ultimate
+name: IceHost Auto Renew
+
 on:
+  workflow_dispatch: # 允许手动触发测试
   schedule:
-    - cron: '15 */5 * * *'
-  workflow_dispatch:
+    # 使用两个 cron 表达式组合实现“每 90 分钟”运行一次 (UTC 时间)
+    - cron: '0 0,3,6,9,12,15,18,21 * * *'
+    - cron: '30 1,4,7,10,13,16,19,22 * * *'
+
 jobs:
-  run-task:
+  renew_job:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # 设置合理的超时时间
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
+          cache: 'pip' # 开启缓存加速依赖安装
 
-      - name: Setup Hysteria2 Shield
-        run: |
-          curl -Lo hy2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
-          chmod +x hy2
-          cat <<EOF > config.yaml
-          server: 83.168.94.238:30045
-          auth: 9afd1229-b893-40c1-84dd-51e7ce204913
-          tls:
-            sni: dash.icehost.pl
-            insecure: true
-          socks5:
-            listen: 127.0.0.1:1080
-          EOF
-          # 后台静默运行并大幅增加初始休眠，确保握手彻底完成
-          ./hy2 client -c config.yaml > hy2.log 2>&1 &
-          sleep 40 
-
-      - name: Prepare Playwright
+      - name: Install dependencies
         run: |
           pip install playwright requests
-          playwright install chromium
-          
-      - name: Execute Bypass Script
+          playwright install --with-deps chromium
+
+      - name: Run Auto Renew Script
         env:
-          ICE_EMAIL: ${{ secrets.ICE_EMAIL }}
-          ICE_PASSWORD: ${{ secrets.ICE_PASSWORD }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          # 面板凭据
+          PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
+          PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
+          PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
+          # Telegram 通知凭据
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python main.py
+        # -u 确保 Python 的 print 日志能实时显示在 GitHub Actions 窗口
+        run: python -u main.py
+
+      - name: Upload Artifacts (Screenshots)
+        if: always() # 无论脚本运行成功还是失败，都上传截图用于排查
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-screenshots
+          path: "*.png"
+          retention-days: 3 # 截图保留3天，避免占用过多空间
