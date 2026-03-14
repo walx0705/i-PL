@@ -30,7 +30,6 @@ def run_renew():
     time.sleep(5)
 
     with sync_playwright() as p:
-        # 强制使用波兰代理，彻底解决 Blocked 问题
         browser = p.chromium.launch(headless=True, proxy={"server": "socks5://127.0.0.1:1080"})
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         
@@ -48,7 +47,7 @@ def run_renew():
             page.goto(SERVER_URL, wait_until="commit")
             time.sleep(20)
 
-            # 自动登录逻辑
+            # 自动登录
             if "login" in page.url or page.locator('input[name="username"]').is_visible():
                 page.goto(LOGIN_URL)
                 page.fill('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
@@ -60,26 +59,26 @@ def run_renew():
 
             btn = page.locator(f'button:has-text("{RENEW_BUTTON_TEXT}")').first
             if btn.count() > 0:
+                print("🎯 执行点击并识别...")
                 btn.click(force=True)
-                time.sleep(8) # 等待反馈弹窗
-
-                # --- 智能红绿字识别 ---
-                # 绿色关键词: Pomyślnie (成功)
-                # 红色关键词: Nie możesz (不能)
-                success_box = page.get_by_text("Pomyślnie", exact=False).first
-                error_box = page.get_by_text("Nie możesz", exact=False).first
-
-                if success_box.count() > 0 and success_box.is_visible():
-                    final_caption = "✅ **通过代理续期成功**\n(检测到绿色弹窗)"
-                elif error_box.count() > 0 and error_box.is_visible():
-                    final_caption = "❌ **未到续期时间**\n(检测到红色弹窗)"
-                else:
-                    final_caption = "❓ 已点击按钮，但未捕捉到红绿字内容，请检查截图。"
+                
+                final_caption = "❓ 已点击按钮，但未捕捉到明确反馈。"
+                for _ in range(10): # 轮询检测弹窗
+                    time.sleep(0.5)
+                    success = page.locator(".alert-success, .bg-green-500, :text('SUKCES'), :text('Pomyślnie')").first
+                    error = page.locator(".alert-danger, .bg-red-500, :text('Nie możesz'), :text('ERROR')").first
+                    
+                    if success.count() > 0 and success.is_visible():
+                        final_caption = "✅ **通过代理续期成功**"
+                        break
+                    elif error.count() > 0 and error.is_visible():
+                        final_caption = "❌ **未到续期时间**"
+                        break
                 
                 page.screenshot(path=last_shot)
             else:
                 page.screenshot(path=last_shot)
-                final_caption = "🔍 页面已加载，但没看到续期按钮。"
+                final_caption = "🔍 未发现续期按钮。"
         except Exception as e:
             final_caption = f"🚨 运行异常: {str(e)[:30]}"
             page.screenshot(path=last_shot)
