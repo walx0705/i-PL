@@ -9,14 +9,27 @@ BASE_URL = "https://icehost.pl"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 
 def send_tg_msg(message):
+    """发送通知到 Telegram 并打印详细日志"""
     tg_token = os.environ.get("TG_TOKEN")
     tg_id = os.environ.get("TG_CHAT_ID")
-    if tg_token and tg_id:
-        url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
-        try:
-            requests.post(url, json={"chat_id": tg_id, "text": message}, timeout=10)
-        except Exception as e:
-            print(f"TG通知失败: {e}")
+    
+    print(f"--- Telegram 通知调试 ---")
+    if not tg_token or not tg_id:
+        print("❌ 错误: TG_TOKEN 或 TG_CHAT_ID 环境变量为空，请检查 GitHub Secrets 设置。")
+        return
+
+    url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+    payload = {"chat_id": tg_id, "text": message}
+    
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        if response.status_code == 200:
+            print("✅ Telegram 消息发送成功！")
+        else:
+            print(f"❌ Telegram 发送失败。状态码: {response.status_code}, 响应内容: {response.text}")
+            print(f"💡 提示: 请确保你已经私聊过该 Bot 并点击了 /start。")
+    except Exception as e:
+        print(f"⚠️ 网络请求异常，无法连接到 Telegram API: {e}")
 
 async def run_task():
     async with async_playwright() as p:
@@ -26,48 +39,31 @@ async def run_task():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
-        # 1. 强化 Cookie 注入逻辑（修复 Invalid cookie fields）
+        # 1. 注入 Cookie
         raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
         if raw_cookies:
-            print("正在清洗并注入 Cookie...")
             formatted_cookies = []
-            # 移除换行，按分号分割
-            items = raw_cookies.replace('\n', '').replace('\r', '').split(';')
-            
-            for item in items:
+            clean_raw = raw_cookies.replace('\n', '').replace('\r', '').strip()
+            for item in clean_raw.split(';'):
                 if '=' in item:
-                    # 关键修复：彻底移除键值对两端的空格
-                    parts = item.split('=', 1)
-                    name = parts[0].strip()
-                    value = parts[1].strip()
-                    
-                    if name and value:
-                        formatted_cookies.append({
-                            'name': name,
-                            'value': value,
-                            'domain': 'icehost.pl',
-                            'path': '/',
-                            'secure': True,
-                            'sameSite': 'Lax'
-                        })
-
-            if formatted_cookies:
-                try:
-                    await context.add_cookies(formatted_cookies)
-                    print(f"✅ 成功注入 {len(formatted_cookies)} 条核心 Cookie")
-                except Exception as e:
-                    print(f"⚠️ Cookie 部分注入失败 (Protocol Error): {e}")
+                    name, value = item.strip().split('=', 1)
+                    formatted_cookies.append({
+                        'name': name.strip(), 'value': value.strip(),
+                        'domain': 'icehost.pl', 'path': '/',
+                        'secure': True, 'sameSite': 'Lax'
+                    })
+            await context.add_cookies(formatted_cookies)
+            print(f"已注入 {len(formatted_cookies)} 条 Cookie")
 
         page = await context.new_page()
 
         try:
-            print(f"🚀 访问面板: {BASE_URL}")
-            # 使用 networkidle 确保加载完全
+            print(f"🚀 正在打开: {BASE_URL}")
             await page.goto(BASE_URL, wait_until="networkidle", timeout=60000)
 
-            # 2. 自动登录补丁
+            # 2. 备用登录逻辑
             if await page.query_selector('input[name="username"]'):
-                print("⚠️ Cookie 已失效或未生效，尝试账号登录...")
+                print("⚠️ Cookie 无效，尝试账号密码登录...")
                 email = os.environ.get("PTERODACTYL_EMAIL")
                 pw = os.environ.get("PTERODACTYL_PASSWORD")
                 if email and pw:
@@ -75,36 +71,35 @@ async def run_task():
                     await page.fill('input[name="password"]', pw)
                     await page.click('button[type="submit"]')
                     await page.wait_for_load_state("networkidle")
-                else:
-                    print("❌ 无法登录：缺少 EMAIL 或 PASSWORD Secrets")
 
-            # 3. 按钮点击
-            print(f"🔍 正在寻找: {RENEW_BUTTON_TEXT}")
-            # 使用 XPath 增加定位成功率
+            # 3. 寻找并点击
+            print(f"🔍 寻找按钮: {RENEW_BUTTON_TEXT}")
+            selector = f'text="{RENEW_BUTTON_TEXT}"'
             try:
-                btn = await page.wait_for_selector(f'text="{RENEW_BUTTON_TEXT}"', timeout=20000)
+                btn = await page.wait_for_selector(selector, timeout=20000)
                 if btn:
                     await btn.click()
-                    print("✅ 续期按钮点击成功！")
-                    send_tg_msg("✅ IceHost 续期成功！")
+                    success_info = "✅ IceHost 续期动作执行成功！"
+                    print(success_info)
+                    send_tg_msg(success_info)
                     await asyncio.sleep(5)
                     await page.screenshot(path="success.png")
                 else:
                     print("❌ 页面未发现续期按钮。")
-                    await page.screenshot(path="no_button.png")
+                    await page.screenshot(path="not_found.png")
             except Exception:
-                print("⚠️ 定位超时，可能按钮文字不匹配或已在倒计时中。")
+                print("⚠️ 定位超时，可能已经续期过了。")
                 await page.screenshot(path="timeout.png")
 
         except Exception as e:
-            print(f"🚨 脚本异常: {e}")
-            if 'page' in locals():
-                await page.screenshot(path="fatal_error.png")
-            send_tg_msg(f"🚨 IceHost 运行异常: {str(e)}")
+            error_info = f"🚨 脚本运行崩溃: {str(e)}"
+            print(error_info)
+            send_tg_msg(error_info)
+            await page.screenshot(path="fatal_error.png")
             sys.exit(1)
         finally:
             await browser.close()
-            print("🏁 任务结束。")
+            print("🏁 任务结束")
 
 if __name__ == "__main__":
     asyncio.run(run_task())
