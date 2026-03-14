@@ -5,7 +5,6 @@ import requests
 from playwright.async_api import async_playwright
 
 # --- 配置 ---
-# 直接使用你提供的具体服务器地址
 BASE_URL = "https://dash.icehost.pl/server/bfe8ebd5" 
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 
@@ -17,86 +16,81 @@ def send_tg_msg(message):
         return
     url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
     try:
-        res = requests.post(url, json={"chat_id": tg_id, "text": message}, timeout=10)
-        print(f"TG 响应: {res.status_code}, {res.text}")
+        res = requests.post(url, json={"chat_id": tg_id, "text": message}, timeout=15)
+        print(f"TG 响应: {res.status_code}")
     except Exception as e:
         print(f"TG 发送异常: {e}")
 
 async def run_task():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
         context = await browser.new_context(
             viewport={'width': 1280, 'height': 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
 
-        # 1. 注入 Cookie (修复 Protocol error: Invalid cookie fields)
+        # 注入 Cookie
         raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
         if raw_cookies:
             formatted_cookies = []
             clean_raw = raw_cookies.replace('\n', '').replace('\r', '').strip()
-            # 兼容带等号或不带等号的各种格式
             for item in clean_raw.split(';'):
                 if '=' in item:
-                    parts = item.strip().split('=', 1)
-                    name = parts[0].strip()
-                    value = parts[1].strip()
-                    if name and value:
-                        formatted_cookies.append({
-                            'name': name, 'value': value,
-                            'domain': 'dash.icehost.pl', 'path': '/',
-                            'secure': True, 'sameSite': 'Lax'
-                        })
-            try:
-                await context.add_cookies(formatted_cookies)
-                print(f"✅ 成功注入 {len(formatted_cookies)} 条 Cookie")
-            except Exception as e:
-                print(f"❌ Cookie 注入失败: {e}")
+                    name, value = item.strip().split('=', 1)
+                    formatted_cookies.append({
+                        'name': name.strip(), 'value': value.strip(),
+                        'domain': 'dash.icehost.pl', 'path': '/',
+                        'secure': True, 'sameSite': 'Lax'
+                    })
+            await context.add_cookies(formatted_cookies)
 
         page = await context.new_page()
+        # 设置全局超时为 90 秒
+        page.set_default_timeout(90000)
 
         try:
-            print(f"🚀 正在访问直接地址: {BASE_URL}")
-            await page.goto(BASE_URL, wait_until="networkidle", timeout=60000)
+            print(f"🚀 正在访问 (尝试绕过网络波动): {BASE_URL}")
+            # 关键修改：将 networkidle 改为 domcontentloaded，加快响应
+            await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=90000)
+            
+            # 给一点额外缓冲时间让脚本加载
+            await asyncio.sleep(10)
 
-            # 2. 备用登录
+            # 检查是否跳到了登录页
             if await page.query_selector('input[name="username"]'):
-                print("⚠️ Cookie 可能已失效，尝试账号密码登录...")
+                print("⚠️ Cookie 失效，尝试账号密码登录...")
                 email = os.environ.get("PTERODACTYL_EMAIL")
                 pw = os.environ.get("PTERODACTYL_PASSWORD")
                 if email and pw:
                     await page.fill('input[name="username"]', email)
                     await page.fill('input[name="password"]', pw)
                     await page.click('button[type="submit"]')
-                    await page.wait_for_load_state("networkidle")
+                    await page.wait_for_load_state("domcontentloaded")
+                    await asyncio.sleep(5)
 
-            # 3. 寻找并点击
-            print(f"🔍 正在寻找续期按钮...")
-            # 增加一点等待时间确保页面加载完
-            await asyncio.sleep(5)
+            # 寻找并点击续期按钮
+            print(f"🔍 寻找按钮: {RENEW_BUTTON_TEXT}")
+            # 尝试通过 text 寻找按钮
+            btn = page.get_by_text(RENEW_BUTTON_TEXT)
             
-            # 使用更稳健的文字匹配
-            selector = f"text='{RENEW_BUTTON_TEXT}'"
-            btn = await page.query_selector(selector)
-            
-            if btn:
-                await btn.click()
-                success_msg = "✅ IceHost 服务器续期成功！"
+            if await btn.count() > 0:
+                await btn.first.click()
+                success_msg = "✅ IceHost 续期动作已触发！"
                 print(success_msg)
                 send_tg_msg(success_msg)
-                await asyncio.sleep(3)
+                await asyncio.sleep(5)
                 await page.screenshot(path="success.png")
             else:
-                # 检查是否已经是续期过的状态
+                # 日期判定逻辑：如果找不到按钮，看看页面上是不是已经有 2026 年的日期了
                 content = await page.content()
                 if "2026-03" in content:
-                    print("ℹ️ 按钮未出现，但从页面日期看似乎已经续期过了。")
+                    print("ℹ️ 未发现按钮，但页面显示已续期。")
                 else:
-                    print("❌ 未找到续期按钮，请检查 Cookie 是否过期。")
+                    print("❌ 未找到按钮，且未发现续期成功迹象。")
                 await page.screenshot(path="not_found.png")
 
         except Exception as e:
-            err_msg = f"🚨 脚本执行出错: {str(e)}"
+            err_msg = f"🚨 运行超时或出错: {str(e)[:100]}"
             print(err_msg)
             send_tg_msg(err_msg)
             await page.screenshot(path="error.png")
