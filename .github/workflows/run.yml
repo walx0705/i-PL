@@ -14,7 +14,7 @@ jobs:
 
       - name: Setup Hysteria2 Proxy
         run: |
-          # 下载官方 Hy2 二进制
+          # 下载最新的 Hy2 二进制
           wget https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hy2
           chmod +x hy2
           
@@ -31,9 +31,9 @@ jobs:
             type: udp
           EOF
           
-          # 后台运行并隐藏输出
+          # 后台运行 Hy2
           ./hy2 client -c hy2_config.yaml > /dev/null 2>&1 &
-          sleep 12 # 留出时间进行握手
+          sleep 12
 
       - name: Install Browser
         run: |
