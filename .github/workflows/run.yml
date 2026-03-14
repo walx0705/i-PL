@@ -2,9 +2,8 @@ name: IceHost Auto Renew with VLESS
 
 on:
   schedule:
-    # 每 5 小时运行一次（IceHost 续期通常为 6 小时，5 小时更保险）
     - cron: '15 */5 * * *'
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   renew:
@@ -20,11 +19,12 @@ jobs:
 
       - name: Install & Start Xray Proxy
         run: |
-          # 下载并安装 Xray 核心
-          bash <(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip)
+          # 1. 直接下载官方二进制包，避免脚本运行错误
+          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -o Xray-linux-64.zip
+          chmod +x xray
           
-          # 写入 VLESS 节点配置（已适配你提供的节点参数）
+          # 2. 写入你的 VLESS 节点配置
           cat <<EOF > config.json
           {
             "inbounds": [{"port": 1080, "protocol": "socks", "settings": {"auth": "noauth"}}],
@@ -47,9 +47,9 @@ jobs:
           }
           EOF
           
-          # 在后台启动 Xray 代理
+          # 3. 后台启动 Xray
           ./xray run -c config.json &
-          sleep 5
+          sleep 10 # 延长等待时间确保连接建立
 
       - name: Install Dependencies
         run: |
