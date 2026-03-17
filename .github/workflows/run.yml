@@ -28,21 +28,19 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          # 必须安装的系统依赖，用于支持 UC 模式和虚拟显示
+          # 仅安装 SeleniumBase 在 Ubuntu 24.04 运行必备的系统库
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
           pip install seleniumbase requests pyvirtualdisplay
-          # 安装浏览器和驱动
           seleniumbase install chrome
           seleniumbase install chromedriver
 
       - name: Run Script
         env:
-          # 保持你原来的环境变量名不变
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        # 关键修改：使用 xvfb-run 启动，确保能模拟点击
+        # 必须加上 xvfb-run 否则 UC 模式无法启动环境
         run: xvfb-run --auto-servernum python -u main.py
 
       - name: Heartbeat
@@ -52,5 +50,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           echo "Last execution: $(date)" > last_run.txt
           git add last_run.txt
-          git commit -m "📅 Task Executed" || echo "No changes"
+          git commit -m "📅 Notification Cleaned" || echo "No changes"
           git push
