@@ -24,73 +24,68 @@ def send_tg_photo(photo_path, caption):
 def run_renew():
     last_shot = "final_status.png"
     
-    # 1. 启动 Hysteria2 代理 (保持原逻辑)
+    # 1. 启动 Hysteria2 代理
     config_content = f"server: {HY2_URL}\nauth: {HY2_AUTH}\nsocks5:\n  listen: 127.0.0.1:1080\ntls:\n  sni: www.bing.com\n  insecure: true"
     with open("config.yaml", "w") as f: f.write(config_content)
+    # 增加日志重定向方便排查代理问题
     proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(5)
 
-    # 2. 使用 SeleniumBase UC 模式
-    # headless=True 在 Linux 服务器运行，proxy 设置为本地 socks5
-    with SB(uc=True, headless=True, proxy="socks5://127.0.0.1:1080") as sb:
-        try:
-            print("🌐 正在通过代理访问服务器页面...")
-            # 使用关键的 uc_open_with_reconnect 绕过初始检测
+    # 2. SeleniumBase 环境配置
+    # 在 GitHub Actions 中，需要设置特定的参数来防止报错
+    try:
+        # 使用 SB 上下文管理器，uc=True 启动无感模式
+        with SB(uc=True, headless=True, proxy="socks5://127.0.0.1:1080") as sb:
+            print("🌐 访问页面中...")
             sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=10.0)
             sb.sleep(10)
 
-            # 3. 自动登录逻辑
+            # 3. 登录逻辑
             if "login" in sb.get_current_url() or sb.is_element_visible('input[name="username"]'):
-                print("🔑 检测到登录墙，正在登录...")
+                print("🔑 执行登录...")
                 sb.type('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
                 sb.type('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
                 sb.click('button[type="submit"]')
                 sb.sleep(10)
                 sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=5.0)
-                sb.sleep(5)
 
-            # 4. 核心：寻找并点击续期按钮
-            # 使用包含文本的选择器
+            # 4. 点击续期
             btn_selector = f'button:contains("{RENEW_BUTTON_TEXT}")'
-            
             if sb.is_element_visible(btn_selector):
-                print("🎯 发现续期按钮，尝试点击并处理验证...")
-                
-                # 触发点击
+                print("🎯 点击按钮...")
                 sb.click(btn_selector)
-                sb.sleep(3)
+                sb.sleep(2)
                 
-                # --- 加入 SeleniumBase 的过验证杀手锏 ---
-                # 自动检测并点击 Cloudflare Turnstile 或类似的验证复选框
+                # 尝试自动过验证
                 try:
-                    sb.uc_gui_click_captcha() 
-                    print("✅ 尝试执行了 GUI 智能点击验证")
+                    sb.uc_gui_click_captcha()
                     sb.sleep(5)
-                except:
-                    pass
+                except: pass
 
-                # 5. 检查执行结果
-                final_caption = "❓ 已操作，但未获取到反馈结果。"
-                # 轮询检测页面上的提示信息
+                # 5. 结果判断
+                final_caption = "❓ 未捕捉到明确反馈"
                 for _ in range(20):
                     if sb.is_text_visible("SUKCES") or sb.is_text_visible("Pomyślnie"):
-                        final_caption = "✅ **续期成功！**"
+                        final_caption = "✅ 续期成功"
                         break
                     elif sb.is_text_visible("Nie możesz") or sb.is_text_visible("ERROR"):
-                        final_caption = "❌ **未到续期时间或操作失败**"
+                        final_caption = "❌ 续期失败或时间未到"
                         break
                     sb.sleep(0.5)
                 
                 sb.save_screenshot(last_shot)
             else:
                 sb.save_screenshot(last_shot)
-                final_caption = "🔍 未发现续期按钮，请检查页面状态。"
+                final_caption = "🔍 未找到按钮"
 
-        except Exception as e:
-            final_caption = f"🚨 运行异常: {str(e)[:50]}"
-            sb.save_screenshot(last_shot)
-        finally:
-            send_tg_photo(last_shot, final_caption)
+    except Exception as e:
+        final_caption = f"🚨 脚本异常: {str(e)[:50]}"
+        # 如果发生异常，尽量保存当时的截图便于分析
+        try: sb.save_screenshot(last_shot)
+        except: pass
+    finally:
+        send_tg_photo(last_shot, final_caption)
+        if 'proxy_process' in locals():
             proxy_process.kill()
 
 if __name__ == "__main__":
