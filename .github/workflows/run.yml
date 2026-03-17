@@ -1,4 +1,4 @@
-name: IceHost Proxy Smart Renew
+Name: IceHost Proxy Smart Renew (UC Mode)
 
 on:
   workflow_dispatch:
@@ -27,17 +27,22 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install playwright requests
-          playwright install --with-deps chromium
+          # 安装虚拟显示服务、浏览器依赖和 SeleniumBase
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgconf-2-4 libnss3-dev libxss1 libasound2
+          pip install seleniumbase requests pyvirtualdisplay
+          # 关键：安装对应的浏览器驱动
+          sbase install chromedriver
 
-      - name: Run Script
+      - name: Run Script (with XVFB)
         env:
           PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python -u main.py
+        # 使用 xvfb-run 来提供虚拟显示环境，这是 UC 模式在 Actions 上运行的关键
+        run: xvfb-run --auto-servernum python -u main.py
 
       - name: Heartbeat
         if: always()
