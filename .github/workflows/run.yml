@@ -28,10 +28,11 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          # 仅安装 SeleniumBase 在 Ubuntu 24.04 运行必备的系统库
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
-          pip install seleniumbase requests pyvirtualdisplay
-          seleniumbase install chrome
+          # 同时安装两个框架的库
+          pip install playwright seleniumbase requests pyvirtualdisplay
+          # 安装两个框架所需的浏览器环境
+          playwright install --with-deps chromium
           seleniumbase install chromedriver
 
       - name: Run Script
@@ -40,7 +41,7 @@ jobs:
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        # 必须加上 xvfb-run 否则 UC 模式无法启动环境
+          PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
         run: xvfb-run --auto-servernum python -u main.py
 
       - name: Heartbeat
