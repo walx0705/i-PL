@@ -5,8 +5,11 @@ import requests
 from seleniumbase import SB
 
 # --- 核心配置 ---
+# 目标服务器 URL
 SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
+# 按钮文字适配：截图显示为 "DODAJ 6 GODZIN WAŻNOŚCI"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
+# 代理配置
 HY2_URL = "83.168.94.238:30045"
 HY2_AUTH = "9afd1229-b893-40c1-84dd-51e7ce204913"
 
@@ -17,7 +20,7 @@ def send_tg_photo(photo_path, caption):
     url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
     try:
         with open(photo_path, 'rb') as photo:
-            requests.post(url, data={'chat_id': tg_id, 'caption': caption, 'parse_mode': 'Markdown'}, files={'photo': photo}, timeout=30)
+            requests.post(url, data={'chat_id': tg_id, 'caption': caption}, files={'photo': photo}, timeout=30)
     except Exception as e:
         print(f"TG发送失败: {e}")
 
@@ -30,14 +33,14 @@ def run_renew():
     proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(5)
 
-    # 2. 使用 SeleniumBase UC 模式运行
+    # 2. 使用 SeleniumBase UC 模式
     with SB(uc=True, headless=True, proxy="socks5://127.0.0.1:1080") as sb:
         try:
-            print("🌐 正在连接 IceHost 面板...")
+            print("🌐 正在访问 IceHost 面板...")
             sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=10.0)
-            sb.sleep(10)
+            sb.sleep(15) # 增加等待时间确保页面完全加载
 
-            # 3. 自动登录逻辑
+            # 3. 自动登录
             if "login" in sb.get_current_url() or sb.is_element_visible('input[name="username"]'):
                 print("🔑 正在执行自动登录...")
                 sb.type('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
@@ -46,37 +49,52 @@ def run_renew():
                 sb.sleep(15)
                 sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=5.0)
 
-            # 4. 查找并处理续期按钮
-            btn_selector = f'button:contains("{RENEW_BUTTON_TEXT}")'
-            if sb.is_element_visible(btn_selector):
-                print("🎯 发现续期按钮，正在点击...")
-                sb.click(btn_selector)
+            # 4. 寻找续期按钮 - 优化选择器
+            # 截图显示按钮在蓝色区域，我们尝试多种定位方式
+            selectors = [
+                f'button:contains("{RENEW_BUTTON_TEXT}")', # 精确文本匹配
+                'button.btn-primary', # 常用按钮类名
+                'a.btn-primary', # 有时是伪装成按钮的链接
+                'button:contains("DODAJ")' # 模糊匹配关键动词
+            ]
+            
+            target_btn = None
+            for sel in selectors:
+                if sb.is_element_visible(sel):
+                    target_btn = sel
+                    break
+            
+            if target_btn:
+                print(f"🎯 发现按钮: {target_btn}，正在执行点击...")
+                sb.click(target_btn)
                 sb.sleep(3)
                 
-                # 核心：调用 SeleniumBase 的智能验证码点击功能
-                print("🧩 尝试绕过人机验证...")
+                # 5. 处理验证码挑战
+                # 针对你截图中的“比大小”验证码
+                # 这种验证码通常在点击按钮后弹出。脚本尝试点击复选框。
+                print("🧩 尝试绕过人机验证挑战...")
                 try:
-                    sb.uc_gui_click_captcha()
-                    sb.sleep(8)
+                    sb.uc_gui_click_captcha() # 模拟真实点击
+                    sb.sleep(10)
                 except:
                     pass
 
-                # 5. 结果轮询判定
-                final_caption = "❓ 已操作，但未获取到反馈结果。"
-                for _ in range(15):
-                    # 检查页面上的波兰语成功标志
+                # 6. 结果判定
+                final_caption = "❓ 已操作，但未获取到明确反馈。"
+                for _ in range(20):
+                    # 检查页面上的波兰语状态词
                     if sb.is_text_visible("SUKCES") or sb.is_text_visible("Pomyślnie"):
-                        final_caption = "✅ **续期操作成功！**"
+                        final_caption = "✅ **IceHost 续期成功！**"
                         break
                     elif sb.is_text_visible("Nie możesz") or sb.is_text_visible("ERROR"):
-                        final_caption = "❌ **未到续期时间或系统报错。**"
+                        final_caption = "❌ **续期失败：时间未到或被拦截。**"
                         break
-                    sb.sleep(1)
+                    sb.sleep(0.5)
                 
                 sb.save_screenshot(last_shot)
             else:
                 sb.save_screenshot(last_shot)
-                final_caption = "🔍 页面未发现续期按钮，请检查账户或代理状态。"
+                final_caption = "🔍 脚本未能在页面找到续期按钮，请对照截图检查。"
 
         except Exception as e:
             final_caption = f"🚨 运行异常: {str(e)[:50]}"
