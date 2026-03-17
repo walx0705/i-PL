@@ -2,7 +2,7 @@ import os
 import time
 import subprocess
 import requests
-from playwright.sync_api import sync_playwright
+from seleniumbase import SB
 
 # --- 核心配置 ---
 SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
@@ -18,73 +18,79 @@ def send_tg_photo(photo_path, caption):
     url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
     try:
         with open(photo_path, 'rb') as photo:
-            requests.post(url, data={'chat_id': tg_id, 'caption': caption, 'parse_mode': 'Markdown'}, files={'photo': photo}, timeout=30)
+            requests.post(url, data={'chat_id': tg_id, 'caption': caption}, files={'photo': photo}, timeout=30)
     except: pass
 
 def run_renew():
     last_shot = "final_status.png"
-    # 启动 Hysteria2 客户端
+    
+    # 1. 启动 Hysteria2 代理 (保持原逻辑)
     config_content = f"server: {HY2_URL}\nauth: {HY2_AUTH}\nsocks5:\n  listen: 127.0.0.1:1080\ntls:\n  sni: www.bing.com\n  insecure: true"
     with open("config.yaml", "w") as f: f.write(config_content)
     proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(5)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, proxy={"server": "socks5://127.0.0.1:1080"})
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        
-        # 注入 Cookie
-        raw_cookies = os.environ.get("PTERODACTYL_COOKIE", "")
-        if raw_cookies:
-            for item in raw_cookies.strip().split(';'):
-                if '=' in item:
-                    name, value = item.strip().split('=', 1)
-                    context.add_cookies([{'name': name.strip(), 'value': value.strip(), 'domain': 'dash.icehost.pl', 'path': '/', 'secure': True}])
-
-        page = context.new_page()
+    # 2. 使用 SeleniumBase UC 模式
+    # headless=True 在 Linux 服务器运行，proxy 设置为本地 socks5
+    with SB(uc=True, headless=True, proxy="socks5://127.0.0.1:1080") as sb:
         try:
-            print("🌐 代理访问中...")
-            page.goto(SERVER_URL, wait_until="commit")
-            time.sleep(20)
+            print("🌐 正在通过代理访问服务器页面...")
+            # 使用关键的 uc_open_with_reconnect 绕过初始检测
+            sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=10.0)
+            sb.sleep(10)
 
-            # 自动登录
-            if "login" in page.url or page.locator('input[name="username"]').is_visible():
-                page.goto(LOGIN_URL)
-                page.fill('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
-                page.fill('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
-                page.click('button[type="submit"]')
-                time.sleep(10)
-                page.goto(SERVER_URL)
-                time.sleep(15)
+            # 3. 自动登录逻辑
+            if "login" in sb.get_current_url() or sb.is_element_visible('input[name="username"]'):
+                print("🔑 检测到登录墙，正在登录...")
+                sb.type('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
+                sb.type('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
+                sb.click('button[type="submit"]')
+                sb.sleep(10)
+                sb.uc_open_with_reconnect(SERVER_URL, reconnect_time=5.0)
+                sb.sleep(5)
 
-            btn = page.locator(f'button:has-text("{RENEW_BUTTON_TEXT}")').first
-            if btn.count() > 0:
-                print("🎯 执行点击并识别...")
-                btn.click(force=True)
+            # 4. 核心：寻找并点击续期按钮
+            # 使用包含文本的选择器
+            btn_selector = f'button:contains("{RENEW_BUTTON_TEXT}")'
+            
+            if sb.is_element_visible(btn_selector):
+                print("🎯 发现续期按钮，尝试点击并处理验证...")
                 
-                final_caption = "❓ 已点击按钮，但未捕捉到明确反馈。"
-                for _ in range(10): # 轮询检测弹窗
-                    time.sleep(0.5)
-                    success = page.locator(".alert-success, .bg-green-500, :text('SUKCES'), :text('Pomyślnie')").first
-                    error = page.locator(".alert-danger, .bg-red-500, :text('Nie możesz'), :text('ERROR')").first
-                    
-                    if success.count() > 0 and success.is_visible():
-                        final_caption = "✅ **通过代理续期成功**"
-                        break
-                    elif error.count() > 0 and error.is_visible():
-                        final_caption = "❌ **未到续期时间**"
-                        break
+                # 触发点击
+                sb.click(btn_selector)
+                sb.sleep(3)
                 
-                page.screenshot(path=last_shot)
+                # --- 加入 SeleniumBase 的过验证杀手锏 ---
+                # 自动检测并点击 Cloudflare Turnstile 或类似的验证复选框
+                try:
+                    sb.uc_gui_click_captcha() 
+                    print("✅ 尝试执行了 GUI 智能点击验证")
+                    sb.sleep(5)
+                except:
+                    pass
+
+                # 5. 检查执行结果
+                final_caption = "❓ 已操作，但未获取到反馈结果。"
+                # 轮询检测页面上的提示信息
+                for _ in range(20):
+                    if sb.is_text_visible("SUKCES") or sb.is_text_visible("Pomyślnie"):
+                        final_caption = "✅ **续期成功！**"
+                        break
+                    elif sb.is_text_visible("Nie możesz") or sb.is_text_visible("ERROR"):
+                        final_caption = "❌ **未到续期时间或操作失败**"
+                        break
+                    sb.sleep(0.5)
+                
+                sb.save_screenshot(last_shot)
             else:
-                page.screenshot(path=last_shot)
-                final_caption = "🔍 未发现续期按钮。"
+                sb.save_screenshot(last_shot)
+                final_caption = "🔍 未发现续期按钮，请检查页面状态。"
+
         except Exception as e:
-            final_caption = f"🚨 运行异常: {str(e)[:30]}"
-            page.screenshot(path=last_shot)
+            final_caption = f"🚨 运行异常: {str(e)[:50]}"
+            sb.save_screenshot(last_shot)
         finally:
             send_tg_photo(last_shot, final_caption)
-            browser.close()
             proxy_process.kill()
 
 if __name__ == "__main__":
