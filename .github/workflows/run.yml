@@ -29,9 +29,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
-          # 同时安装两个框架的库
           pip install playwright seleniumbase requests pyvirtualdisplay
-          # 安装两个框架所需的浏览器环境
           playwright install --with-deps chromium
           seleniumbase install chromedriver
 
@@ -41,15 +39,14 @@ jobs:
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
         run: xvfb-run --auto-servernum python -u main.py
 
-      - name: Heartbeat
+      - name: Save Cookie & Heartbeat
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Last execution: $(date)" > last_run.txt
-          git add last_run.txt
-          git commit -m "📅 Notification Cleaned" || echo "No changes"
+          # 检查 cookie 文件是否有变化，有则提交
+          git add session_cookies.json last_run.txt || true
+          git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
           git push
