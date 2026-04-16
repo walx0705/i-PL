@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write  # 必须加上这个权限，不然删不了 workflow 记录
+      actions: write
 
     steps:
       - name: Checkout
@@ -47,19 +47,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # 检查 cookie 文件是否有变化，有则提交
           git add session_cookies.json last_run.txt || true
           git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
           git push
 
-      # --------------------------
-      # 新增：自动清理旧运行记录
-      # --------------------------
       - name: Cleanup old workflow runs
-        if: always()  # 不管脚本成功失败都执行清理
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          workflow_id: "IceHost Proxy Smart Renew"  # 你的 workflow 名称
-          keep_minimum_runs: 5  # 只保留最近5条记录，多余的自动删除
+          delete_workflow_pattern: "IceHost Proxy Smart Renew"
+          keep_minimum_runs: 5
