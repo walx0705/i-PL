@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write  # 必须加上这个权限，不然删不了 workflow 记录
 
     steps:
       - name: Checkout
@@ -17,7 +18,7 @@ jobs:
 
       - name: Install Hysteria
         run: |
-          wget https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
           chmod +x hysteria
 
       - name: Set up Python
@@ -50,3 +51,15 @@ jobs:
           git add session_cookies.json last_run.txt || true
           git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
           git push
+
+      # --------------------------
+      # 新增：自动清理旧运行记录
+      # --------------------------
+      - name: Cleanup old workflow runs
+        if: always()  # 不管脚本成功失败都执行清理
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          workflow_id: "IceHost Proxy Smart Renew"  # 你的 workflow 名称
+          keep_minimum_runs: 5  # 只保留最近5条记录，多余的自动删除
