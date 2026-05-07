@@ -3,11 +3,11 @@ name: IceHost Proxy Smart Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */3 * * *' 
+    - cron: '0 */3 * * *'
 
-# 这里只保留 contents: write，去掉了报错的 workflows 权限
 permissions:
   contents: write
+  workflows: write
 
 jobs:
   renew_job:
@@ -54,9 +54,9 @@ jobs:
 
       - name: Cleanup old workflow runs
         if: always()
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@v2.5.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}
           repository: ${{ github.repository }}
-          delete_workflow_pattern: "IceHost Proxy Smart Renew"
+          retain_days: 0
           keep_minimum_runs: 5
