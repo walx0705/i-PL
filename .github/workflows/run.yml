@@ -3,15 +3,14 @@ name: IceHost Proxy Smart Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */3 * * *'
-
-permissions:
-  contents: write
-  actions: write
+    - cron: '0 */3 * * *' 
 
 jobs:
   renew_job:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
 
     steps:
       - name: Checkout
@@ -35,24 +34,28 @@ jobs:
           playwright install --with-deps chromium
           seleniumbase install chromedriver
 
-      - name: Run Renew Script
-        run: |
-          # 这里是你原本的运行脚本命令
-          # 请确保你的 python 脚本路径正确
-          python your_script_name.py
+      - name: Run Script
+        env:
+          PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
+          PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: xvfb-run --auto-servernum python -u main.py
 
       - name: Save Cookie & Heartbeat
+        if: always()
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Update cookie and status [skip ci]" || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add session_cookies.json last_run.txt || true
+          git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
           git push
 
       - name: Cleanup old workflow runs
-        uses: mattraks/delete-workflow-runs@v2
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          retain_days: 1
-          keep_minimum_runs: 2
+          delete_workflow_pattern: "IceHost Proxy Smart Renew"
+          keep_minimum_runs: 5
