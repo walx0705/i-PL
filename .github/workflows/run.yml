@@ -36,13 +36,10 @@ jobs:
           seleniumbase install chromedriver
 
       - name: Run Renew Script
-        env:
-          USERNAME: ${{ secrets.USERNAME }}
-          PASSWORD: ${{ secrets.PASSWORD }}
         run: |
-          # 这里放你的 python 脚本运行命令，例如：
-          # python renew.py
-          echo "这里替换为你实际的运行命令"
+          # 这里是你原本的运行脚本命令
+          # 请确保你的 python 脚本路径正确
+          python your_script_name.py
 
       - name: Save Cookie & Heartbeat
         run: |
@@ -53,9 +50,9 @@ jobs:
           git push
 
       - name: Cleanup old workflow runs
-        uses: Mattraks/delete-workflow-runs@v2.5.0
+        uses: mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 5
+          retain_days: 1
+          keep_minimum_runs: 2
