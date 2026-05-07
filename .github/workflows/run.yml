@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  workflows: write
+  actions: write
 
 jobs:
   renew_job:
@@ -35,25 +35,24 @@ jobs:
           playwright install --with-deps chromium
           seleniumbase install chromedriver
 
-      - name: Run Script
+      - name: Run Renew Script
         env:
-          PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
-          PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: xvfb-run --auto-servernum python -u main.py
+          USERNAME: ${{ secrets.USERNAME }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+        run: |
+          # 这里放你的 python 脚本运行命令，例如：
+          # python renew.py
+          echo "这里替换为你实际的运行命令"
 
       - name: Save Cookie & Heartbeat
-        if: always()
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add session_cookies.json last_run.txt || true
-          git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update cookie and status [skip ci]" || exit 0
           git push
 
       - name: Cleanup old workflow runs
-        if: always()
         uses: Mattraks/delete-workflow-runs@v2.5.0
         with:
           token: ${{ github.token }}
