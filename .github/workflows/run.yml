@@ -5,10 +5,9 @@ on:
   schedule:
     - cron: '0 */3 * * *' 
 
+# 这里只保留 contents: write，去掉了报错的 workflows 权限
 permissions:
   contents: write
-  actions: write
-  workflows: write
 
 jobs:
   renew_job:
