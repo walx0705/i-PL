@@ -5,12 +5,14 @@ on:
   schedule:
     - cron: '0 */3 * * *' 
 
+permissions:
+  contents: write
+  actions: write
+  workflows: write
+
 jobs:
   renew_job:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
 
     steps:
       - name: Checkout
