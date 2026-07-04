@@ -19,7 +19,8 @@ jobs:
       - name: Install TUIC Client
         run: |
           wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
-            https://github.com/EAimTY/tuic/releases/latest/download/tuic-client-linux-amd64 -O tuic-client
+            -O tuic-client \
+            "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-client-1.0.0-x86_64-linux-gnu"
           chmod +x tuic-client
 
       - name: Set up Python
@@ -41,7 +42,7 @@ jobs:
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          # TUIC 代理敏感变量（建议设为 Secrets）
+          # TUIC 代理敏感变量（强烈建议设为 Secrets）
           TUIC_UUID: ${{ secrets.TUIC_UUID }}
           TUIC_PASSWORD: ${{ secrets.TUIC_PASSWORD }}
         run: xvfb-run --auto-servernum python -u main.py
@@ -62,4 +63,4 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           delete_workflow_pattern: "IceHost Proxy Smart Renew"
-          keep_minimum_runs: 5   # 保留最近5条运行记录
+          keep_minimum_runs: 5   # 只保留最近5条运行记录
