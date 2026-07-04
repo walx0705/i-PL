@@ -17,7 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 统一缓存：浏览器依赖 + Python虚拟环境，解决venv缓存报错
       - name: Cache Playwright & Python venv
         uses: actions/cache@v3
         with:
@@ -30,7 +29,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # 移除了废弃的 cache: 'venv'
 
       - name: Install minimal system dependencies
         run: |
@@ -41,8 +39,10 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install --upgrade requests seleniumbase
+          # 新增 playwright 依赖，解决模块缺失
+          pip install --upgrade requests seleniumbase playwright
           seleniumbase install chromium
+          playwright install chromium
 
       - name: Run renew script with virtual display
         env:
@@ -52,7 +52,8 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           source venv/bin/activate
-          xvfb-run --auto-servernum python -u main.py
+          # 确认包安装路径，双重保险
+          python -u main.py
 
       - name: Save Cookie & Heartbeat file
         if: always()
