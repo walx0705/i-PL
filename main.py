@@ -10,8 +10,8 @@ from seleniumbase import SB
 SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
 LOGIN_URL = "https://dash.icehost.pl/login"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
-HY2_URL = "83.168.94.238:30045"
-HY2_AUTH = "9afd1229-b893-40c1-84dd-51e7ce204913"
+HY2_URL = "83.168.94.238:30086"
+HY2_AUTH = "515490ac-c0eb-4a4e-91d1-a5454b7e5fd6"
 COOKIE_FILE = "session_cookies.json"
 
 def send_tg_photo(photo_path, caption):
@@ -27,7 +27,17 @@ def send_tg_photo(photo_path, caption):
 def run_renew():
     last_shot = "final_status.png"
     # 1. 启动 Hysteria2 代理
-    config_content = f"server: {HY2_URL}\nauth: {HY2_AUTH}\nsocks5:\n  listen: 127.0.0.1:1080\ntls:\n  sni: www.bing.com\n  insecure: true"
+    config_content = (
+        f"server: {HY2_URL}\n"
+        f"auth: {HY2_AUTH}\n"
+        "socks5:\n"
+        "  listen: 127.0.0.1:1080\n"
+        "tls:\n"
+        "  sni: www.bing.com\n"
+        "  insecure: true\n"
+        "  alpn:\n"
+        "    - h3"
+    )
     with open("config.yaml", "w") as f: f.write(config_content)
     proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(5)
