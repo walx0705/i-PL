@@ -3,7 +3,7 @@ name: IceHost Proxy Smart Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *'   # 每2小时运行一次
+    - cron: '0 */2 * * *'
 
 jobs:
   renew_job:
@@ -16,21 +16,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install TUIC Client (动态获取最新版本)
+      - name: Install TUIC Client (自动解析最新版本下载链接)
         run: |
-          # 获取最新发布信息
-          RELEASE_INFO=$(curl -s https://api.github.com/repos/tuic-protocol/tuic/releases/latest)
-          # 提取 tag 名，例如 "tuic-server-1.0.0"
-          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
-          # 提取纯版本号，例如 "1.0.0"
-          VERSION_NUM=${TAG_NAME#tuic-server-}
-          # 查找资产中匹配客户端 Linux x86_64 的文件名
-          ASSET_URL=$(echo "$RELEASE_INFO" | jq -r --arg V "$VERSION_NUM" '.assets[] | select(.name | test("tuic-client-" + $V + ".*x86_64.*linux")) | .browser_download_url')
-          echo "下载地址: $ASSET_URL"
-          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 -O tuic-client "$ASSET_URL"
+          # 从 Release 页面抓取客户端下载链接
+          DOWNLOAD_URL=$(curl -sL https://github.com/tuic-protocol/tuic/releases/latest | \
+            grep -oP 'href="(/tuic-protocol/tuic/releases/download/[^"]*tuic-client[^"]*linux[^"]*)"' | \
+            head -1 | sed 's/href="//;s/"//')
+          # 补全域名
+          FULL_URL="https://github.com${DOWNLOAD_URL}"
+          echo "下载地址: $FULL_URL"
+          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 -O tuic-client "$FULL_URL"
           chmod +x tuic-client
-        env:
-          GH_TOKEN: ${{ github.token }}   # 避免 API 限流
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,7 +36,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1 jq
+          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
           pip install playwright seleniumbase requests pyvirtualdisplay
           playwright install --with-deps chromium
           seleniumbase install chromedriver
