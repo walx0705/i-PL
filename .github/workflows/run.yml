@@ -16,12 +16,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install TUIC Client
+      - name: Install TUIC Client (动态获取最新版本)
         run: |
-          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
-            -O tuic-client \
-            "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-client-1.0.0-x86_64-unknown-linux-gnu"
+          # 获取最新发布信息
+          RELEASE_INFO=$(curl -s https://api.github.com/repos/tuic-protocol/tuic/releases/latest)
+          # 提取 tag 名，例如 "tuic-server-1.0.0"
+          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
+          # 提取纯版本号，例如 "1.0.0"
+          VERSION_NUM=${TAG_NAME#tuic-server-}
+          # 查找资产中匹配客户端 Linux x86_64 的文件名
+          ASSET_URL=$(echo "$RELEASE_INFO" | jq -r --arg V "$VERSION_NUM" '.assets[] | select(.name | test("tuic-client-" + $V + ".*x86_64.*linux")) | .browser_download_url')
+          echo "下载地址: $ASSET_URL"
+          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 -O tuic-client "$ASSET_URL"
           chmod +x tuic-client
+        env:
+          GH_TOKEN: ${{ github.token }}   # 避免 API 限流
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,7 +40,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
+          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1 jq
           pip install playwright seleniumbase requests pyvirtualdisplay
           playwright install --with-deps chromium
           seleniumbase install chromedriver
