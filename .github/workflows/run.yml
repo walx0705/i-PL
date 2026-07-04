@@ -3,7 +3,7 @@ name: IceHost Proxy Smart Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 */2 * * *' 
 
 jobs:
   renew_job:
@@ -16,23 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install TUIC Client (API 动态获取)
+      - name: Install Hysteria
         run: |
-          # 获取最新 Release 的 assets 信息
-          API_URL="https://api.github.com/repos/tuic-protocol/tuic/releases/latest"
-          # 查找名字包含 tuic-client 和 linux 的资产
-          DOWNLOAD_URL=$(curl -sL "$API_URL" | jq -r '.assets[] | select(.name | test("tuic-client.*linux"; "i")) | .browser_download_url' | head -1)
-          
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "❌ 未找到适用于 Linux 的 TUIC 客户端"
-            exit 1
-          fi
-          
-          echo "下载地址: $DOWNLOAD_URL"
-          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 -O tuic-client "$DOWNLOAD_URL"
-          chmod +x tuic-client
-          # 验证是否为有效 ELF 文件
-          file tuic-client | grep -q "ELF" || { echo "❌ 文件格式错误"; exit 1; }
+          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,7 +29,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1 jq
+          sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
           pip install playwright seleniumbase requests pyvirtualdisplay
           playwright install --with-deps chromium
           seleniumbase install chromedriver
@@ -53,8 +40,6 @@ jobs:
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          TUIC_UUID: ${{ secrets.TUIC_UUID }}
-          TUIC_PASSWORD: ${{ secrets.TUIC_PASSWORD }}
         run: xvfb-run --auto-servernum python -u main.py
 
       - name: Save Cookie & Heartbeat
