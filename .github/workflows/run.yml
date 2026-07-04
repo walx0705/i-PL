@@ -35,11 +35,18 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
 
+      # 恢复 hysteria 下载，放到当前工作目录并赋予执行权限
+      - name: Download Hysteria binary
+        run: |
+          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
+            https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 \
+            -O hysteria
+          chmod +x hysteria
+
       - name: Install Python dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
-          # 新增 playwright 依赖，解决模块缺失
           pip install --upgrade requests seleniumbase playwright
           seleniumbase install chromium
           playwright install chromium
@@ -52,8 +59,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           source venv/bin/activate
-          # 确认包安装路径，双重保险
-          python -u main.py
+          xvfb-run --auto-servernum python -u main.py
 
       - name: Save Cookie & Heartbeat file
         if: always()
