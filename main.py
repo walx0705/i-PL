@@ -22,6 +22,7 @@ TUIC_UDP_RELAY = os.getenv("TUIC_UDP_RELAY", "native")
 TUIC_CONGESTION = os.getenv("TUIC_CONGESTION", "bbr")
 TUIC_ALLOW_INSECURE = os.getenv("TUIC_ALLOW_INSECURE", "true").lower() == "true"
 
+
 def send_tg_photo(photo_path, caption):
     tg_token = os.environ.get("TG_TOKEN")
     tg_id = os.environ.get("TG_CHAT_ID")
@@ -34,6 +35,7 @@ def send_tg_photo(photo_path, caption):
                           files={'photo': photo}, timeout=30)
     except:
         pass
+
 
 def run_renew():
     last_shot = "final_status.png"
@@ -158,6 +160,7 @@ def run_renew():
             send_tg_photo(last_shot, final_caption)
             browser.close()
             proxy_process.kill()
+
 
 if __name__ == "__main__":
     run_renew()
