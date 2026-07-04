@@ -12,7 +12,7 @@ LOGIN_URL = os.getenv("LOGIN_URL", "https://dash.icehost.pl/login")
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 COOKIE_FILE = "session_cookies.json"
 
-# TUIC 代理参数（从环境变量读取，敏感信息保护）
+# TUIC 代理参数
 TUIC_SERVER = os.getenv("TUIC_SERVER", "83.168.94.238:30086")
 TUIC_UUID = os.getenv("TUIC_UUID", "515490ac-c0eb-4a4e-91d1-a5454b7e5fd6")
 TUIC_PASSWORD = os.getenv("TUIC_PASSWORD", "admin")
@@ -40,7 +40,7 @@ def send_tg_photo(photo_path, caption):
 def run_renew():
     last_shot = "final_status.png"
 
-    # 1. 启动 TUIC 代理（Socks5 监听 127.0.0.1:1080）
+    # 启动 TUIC 代理
     tuic_config = {
         "relay": {
             "server": TUIC_SERVER,
@@ -92,7 +92,6 @@ def run_renew():
             page.goto(SERVER_URL, wait_until="commit", timeout=60000)
             time.sleep(10)
 
-            # 检查 Cookie 是否失效
             if "login" in page.url or page.locator('input[name="username"]').is_visible():
                 print("⚠️ Cookie 已失效，切换 SeleniumBase 进行账号登录...")
                 browser.close()
@@ -130,7 +129,6 @@ def run_renew():
                 page.goto(SERVER_URL, wait_until="commit")
                 time.sleep(15)
 
-            # 续期点击逻辑
             btn = page.locator(f'button:has-text("{RENEW_BUTTON_TEXT}")').first
             if btn.count() > 0:
                 print("🎯 执行点击...")
