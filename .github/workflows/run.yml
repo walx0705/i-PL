@@ -3,6 +3,7 @@ name: IceHost Proxy Smart Renew
 on:
   workflow_dispatch:
   schedule:
+    # UTC时区每2小时执行，北京时间=UTC+8，如需国内0/2/4点可自行调整
     - cron: '0 */2 * * *' 
 
 jobs:
@@ -10,31 +11,40 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
 
     steps:
-      - name: Checkout
+      - name: Checkout repo code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整拉取历史，解决git push冲突
 
-      - name: Install Hysteria
-        run: |
-          wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
-          chmod +x hysteria
+      # 缓存浏览器依赖，大幅缩短构建时间
+      - name: Cache Playwright deps
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            venv
+          key: playwright-${{ hashFiles('requirements.txt') }}
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'venv'
 
-      - name: Install Dependencies
+      - name: Install minimal system dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
-          pip install playwright seleniumbase requests pyvirtualdisplay
-          playwright install --with-deps chromium
-          seleniumbase install chromedriver
 
-      - name: Run Script
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade requests seleniumbase
+          # seleniumbase自带完整浏览器，无需额外安装chromedriver、pyvirtualdisplay
+          seleniumbase install chromium
+
+      - name: Run renew script with virtual display
         env:
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
@@ -42,20 +52,22 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: xvfb-run --auto-servernum python -u main.py
 
-      - name: Save Cookie & Heartbeat
+      - name: Save Cookie & Heartbeat file
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin ${{ github.ref_name }} --rebase || true # 拉取远程解决冲突
           git add session_cookies.json last_run.txt || true
-          git commit -m "📅 Update Session & Heartbeat" || echo "No changes"
-          git push
+          git commit -m "📅 Auto update session cookie & heartbeat" || echo "No file changes to commit"
+          git push origin ${{ github.ref_name }} || echo "Git push conflict skipped"
 
+      # 清理旧运行记录（必须配置仓库PAT令牌 WORKFLOW_CLEAN_TOKEN）
       - name: Cleanup old workflow runs
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
           repository: ${{ github.repository }}
           delete_workflow_pattern: "IceHost Proxy Smart Renew"
           keep_minimum_runs: 5
