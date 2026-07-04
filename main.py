@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 from seleniumbase import SB
 
 # --- 核心配置 ---
-SERVER_URL = "https://dash.icehost.pl/server/bfe8ebd5"
+SERVER_URL = "https://dash.icehost.pl/server/92d3015f"
 LOGIN_URL = "https://dash.icehost.pl/login"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
 HY2_URL = "83.168.94.238:30086"
