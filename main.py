@@ -18,17 +18,30 @@ COOKIE_FILE = "session_cookies.json"
 def send_tg_photo(photo_path, caption):
     tg_token = os.environ.get("TG_TOKEN")
     tg_id = os.environ.get("TG_CHAT_ID")
-    if not tg_token or not tg_id or not os.path.exists(photo_path): 
-        print("⚠️ 缺少 TG_TOKEN, TG_CHAT_ID 或截图文件，无法发送 TG 消息。")
+    
+    # 1. 如果没有截图，仅发送纯文本消息作为保底
+    if not tg_token or not tg_id:
+        print("⚠️ 缺少 TG 环境变量，无法发送消息。")
         return
+
+    if not os.path.exists(photo_path):
+        print(f"⚠️ 截图不存在，尝试发送纯文本消息。")
+        try:
+            url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+            requests.post(url, data={'chat_id': tg_id, 'text': f"⚠️ {caption}\n(注：截图生成失败)", 'parse_mode': 'Markdown'}, timeout=10)
+        except Exception as e:
+            print(f"❌ 纯文本发送异常: {e}")
+        return
+
+    # 2. 如果有截图，发图片
     url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
     try:
         with open(photo_path, 'rb') as photo:
             resp = requests.post(url, data={'chat_id': tg_id, 'caption': caption, 'parse_mode': 'Markdown'}, files={'photo': photo}, timeout=30)
             if resp.status_code != 200:
-                print(f"❌ TG 发送失败: {resp.text}")
+                print(f"❌ TG 发送图片失败: {resp.text}")
     except Exception as e:
-        print(f"❌ TG 发送异常: {e}")
+        print(f"❌ TG 发送图片异常: {e}")
 
 def run_renew():
     last_shot = "final_status.png"
@@ -49,8 +62,13 @@ def run_renew():
     with open("config.yaml", "w") as f: 
         f.write(config_content)
     
-    proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(5) # 等待代理启动
+    try:
+        proxy_process = subprocess.Popen(["./hysteria", "client", "-c", "config.yaml"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(5)
+    except Exception as e:
+        print(f"🚨 启动代理失败: {e}")
+        send_tg_photo("", f"🚨 **代理启动失败**\n错误: {str(e)}")
+        return
 
     playwright_cookies = []
 
@@ -79,17 +97,21 @@ def run_renew():
                 # --- 2. 检查 Cookie 是否失效 ---
                 if "login" in page.url or page.locator('input[name="username"]').is_visible():
                     print("⚠️ Cookie 已失效，切换 SeleniumBase 进行账号登录...")
-                    browser.close() # 关闭当前 Playwright 实例
+                    browser.close()
 
-                    # 调用 SeleniumBase 重新登录
+                    pterodactyl_email = os.environ.get("PTERODACTYL_EMAIL")
+                    pterodactyl_password = os.environ.get("PTERODACTYL_PASSWORD")
+                    
+                    if not pterodactyl_email or not pterodactyl_password:
+                        raise Exception("缺少 PTERODACTYL_EMAIL 或 PTERODACTYL_PASSWORD 环境变量，无法登录！")
+
                     with SB(uc=True, headless=True, proxy="socks5://127.0.0.1:1080") as sb:
                         sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
-                        sb.type('input[name="username"]', os.environ.get("PTERODACTYL_EMAIL"))
-                        sb.type('input[name="password"]', os.environ.get("PTERODACTYL_PASSWORD"))
+                        sb.type('input[name="username"]', pterodactyl_email)
+                        sb.type('input[name="password"]', pterodactyl_password)
                         sb.click('button[type="submit"]')
                         sb.sleep(10)
                         
-                        # 获取新 Cookie 并保存
                         new_cookies = sb.get_cookies()
                         playwright_cookies = []
                         for c in new_cookies:
@@ -117,14 +139,9 @@ def run_renew():
                 if btn.count() > 0:
                     print("🎯 执行点击...")
                     btn.click(force=True)
-                    
-                    # 给页面 5 秒反应时间
                     time.sleep(5)
-                    
-                    # 截图备用
                     page.screenshot(path=last_shot)
                     
-                    # 检测反馈 (使用或逻辑，优先匹配)
                     success = page.locator(".alert-success, .bg-green-500, :text('SUKCES'), :text('Pomyślnie')").first
                     error = page.locator(".alert-danger, .bg-red-500, :text('Nie możesz'), :text('ERROR')").first
                     
@@ -133,13 +150,11 @@ def run_renew():
                     elif error.count() > 0 and error.is_visible():
                         final_caption = "❌ **未到续期时间**"
                     else:
-                        # 重点修复：找不到反馈时，把当前页面信息返回给TG
                         final_caption = (
-                            f"⚠️ **点击成功，但未检测到反馈元素 (已截图)**\n"
+                            f"⚠️ **点击成功，但未检测到反馈元素**\n"
                             f"📍 当前URL: `{page.url}`\n"
                             f"📌 页面Title: {page.title()}"
                         )
-                        print("⚠️ 未找到成功或失败的反馈元素，具体看截图。")
                         
                 else:
                     page.screenshot(path=last_shot)
@@ -150,27 +165,21 @@ def run_renew():
                     )
 
             except Exception as e:
-                # 捕获运行时的异常
                 print(f"🚨 运行异常: {e}")
-                page.screenshot(path=last_shot)
+                try: page.screenshot(path=last_shot)
+                except: pass
                 final_caption = f"🚨 **脚本运行异常**\n错误信息: `{str(e)[:100]}`"
             
             finally:
-                # 无论什么情况，最后都发一张截图到TG
+                # 核心：无论如何都会调用发送
                 send_tg_photo(last_shot, final_caption)
                 browser.close()
 
     except Exception as global_e:
-        # 捕获 Playwright 启动等全局异常
         print(f"🚨 全局异常: {global_e}")
-        final_caption = f"🚨 **全局初始化失败**\n错误信息: `{str(global_e)[:100]}`"
-        # 尝试发送文本消息（没有截图）
-        if os.environ.get("TG_TOKEN") and os.environ.get("TG_CHAT_ID"):
-            requests.post(f"https://api.telegram.org/bot{os.environ.get('TG_TOKEN')}/sendMessage", 
-                          data={'chat_id': os.environ.get('TG_CHAT_ID'), 'text': final_caption})
+        send_tg_photo("", f"🚨 **全局初始化失败**\n错误信息: `{str(global_e)[:100]}`")
     
     finally:
-        # 清理代理进程
         proxy_process.kill()
         print("🔄 代理已关闭，脚本结束。")
 
