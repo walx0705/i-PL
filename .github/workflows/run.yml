@@ -35,7 +35,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
 
-      # 恢复 hysteria 下载，放到当前工作目录并赋予执行权限
       - name: Download Hysteria binary
         run: |
           wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
@@ -71,18 +70,11 @@ jobs:
           git commit -m "📅 Auto update session cookie & heartbeat" || echo "No file changes to commit"
           git push origin ${{ github.ref_name }} || echo "Git push conflict skipped"
 
-      # 你添加的清理步骤放在这里
-      - name: 🧹 清理旧记录
+      - name: Cleanup old workflow runs
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
-          count=0
-          for run_id in $runs; do
-            count=$((count + 1))
-            if [ $count -gt 1 ]; then
-              echo "删除运行记录: $run_id"
-              gh run delete $run_id || true
-            fi
-          done
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: "IceHost Proxy Smart Renew"
+          keep_minimum_runs: 5
