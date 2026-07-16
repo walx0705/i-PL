@@ -1,4 +1,4 @@
-name: IceHost Proxy Smart Renew
+name: IceHost 代理智能续期
 
 on:
   workflow_dispatch:
@@ -12,12 +12,12 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo code
+      - name: 检出仓库代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Cache Playwright & Python venv
+      - name: 缓存 Playwright 和 Python 虚拟环境
         uses: actions/cache@v3
         with:
           path: |
@@ -25,24 +25,24 @@ jobs:
             venv
           key: full-cache-${{ hashFiles('requirements.txt') }}
 
-      - name: Set up Python 3.11
+      - name: 设置 Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install minimal system dependencies
+      - name: 安装最小系统依赖
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
 
-      - name: Download Hysteria binary
+      - name: 下载 Hysteria 二进制文件
         run: |
           wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
             https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 \
             -O hysteria
           chmod +x hysteria
 
-      - name: Install Python dependencies
+      - name: 安装 Python 依赖
         run: |
           python -m venv venv
           source venv/bin/activate
@@ -50,7 +50,7 @@ jobs:
           seleniumbase install chromium
           playwright install chromium
 
-      - name: Run renew script with virtual display
+      - name: 在虚拟显示器中运行续期脚本
         env:
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
@@ -60,17 +60,17 @@ jobs:
           source venv/bin/activate
           xvfb-run --auto-servernum python -u main.py
 
-      - name: Save Cookie & Heartbeat file
+      - name: 保存 Cookie 和心跳文件
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin ${{ github.ref_name }} --rebase || true
           git add session_cookies.json last_run.txt || true
-          git commit -m "📅 Auto update session cookie & heartbeat" || echo "No file changes to commit"
-          git push origin ${{ github.ref_name }} || echo "Git push conflict skipped"
+          git commit -m "📅 自动更新会话 Cookie 和心跳" || echo "没有文件变更，跳过提交"
+          git push origin ${{ github.ref_name }} || echo "Git 推送冲突，跳过"
 
-      - name: Cleanup old workflow runs
+      - name: 清理旧运行记录 (保留最近 5 次)
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
