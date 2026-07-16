@@ -10,8 +10,9 @@ from seleniumbase import SB
 SERVER_URL = "https://dash.icehost.pl/server/92d3015f"
 LOGIN_URL = "https://dash.icehost.pl/login"
 RENEW_BUTTON_TEXT = "DODAJ 6 GODZIN WAŻNOŚCI"
+# 替换为你的代理配置
 HY2_URL = "83.168.94.238:30086"
-HY2_AUTH = "515490ac-c0eb-4a4e-91d1-a5454b7e5fd6"
+HY2_AUTH = "a2d89731-d759-4652-927d-28ed06ab0614"  # 已替换
 COOKIE_FILE = "session_cookies.json"
 
 def send_tg_photo(photo_path, caption):
@@ -26,7 +27,7 @@ def send_tg_photo(photo_path, caption):
 
 def run_renew():
     last_shot = "final_status.png"
-    # 1. 启动 Hysteria2 代理
+    # 1. 启动 Hysteria2 代理（使用新认证密钥）
     config_content = (
         f"server: {HY2_URL}\n"
         f"auth: {HY2_AUTH}\n"
