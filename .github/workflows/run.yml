@@ -70,11 +70,27 @@ jobs:
           git commit -m "📅 自动更新会话 Cookie 和心跳" || echo "没有文件变更，跳过提交"
           git push origin ${{ github.ref_name }} || echo "Git 推送冲突，跳过"
 
-      - name: 清理旧运行记录 (保留最近 5 次)
+      - name: 🗑️ 彻底清理旧记录（保留最近5次）
         if: always()
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
-          repository: ${{ github.repository }}
-          delete_workflow_pattern: "IceHost Proxy Smart Renew"
-          keep_minimum_runs: 5
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
+        run: |
+          echo "🔍 获取当前工作流的所有运行记录..."
+          runs=$(gh run list --workflow="IceHost 代理智能续期" --limit=50 --json databaseId --jq '.[].databaseId' || echo "")
+          
+          if [ -z "$runs" ]; then
+            echo "⚠️ 未找到任何记录。"
+            exit 0
+          fi
+
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 5 ]; then
+              echo "🗑️ 正在删除旧记录: $run_id"
+              gh run delete $run_id --force || echo "删除 $run_id 失败，跳过"
+            else
+              echo "✅ 保留最近的记录: $run_id"
+            fi
+          done
+          echo "✨ 清理完成！"
