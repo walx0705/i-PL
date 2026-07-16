@@ -88,7 +88,8 @@ jobs:
             count=$((count + 1))
             if [ $count -gt 5 ]; then
               echo "🗑️ 正在删除旧记录: $run_id"
-              gh run delete $run_id --force || echo "删除 $run_id 失败，跳过"
+              # 已移除 --force 参数，适配旧版 gh 命令
+              gh run delete $run_id || echo "删除 $run_id 失败，跳过"
             else
               echo "✅ 保留最近的记录: $run_id"
             fi
