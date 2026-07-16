@@ -39,17 +39,3 @@
 
 ━━━━━━━━━━━━━━━━━━━━━━
 
-## ⚠️ 注意事项与排错指南
-
-1. **关于 `PTERODACTYL_COOKIE` 失效导致的红叉（❌）失败**：
-   * 如果您的 Actions 运行记录频繁报错（如截图中的 #820），通常是因为 `PTERODACTYL_COOKIE` 缓存过期，且网络不稳导致重登失败。
-   * **解决办法**：直接去 Settings 的 Secrets 页面，**手动删除** `PTERODACTYL_COOKIE` 这一项，然后重新手动触发一次工作流。脚本会强制使用账号密码登录生成全新的 Cookie，恢复正常。
-
-2. **代理配置（源码硬编码）**：
-   * 当前脚本的 Hysteria2 节点地址和认证密钥（`HY2_URL` 和 `HY2_AUTH`）是直接硬编码在 `main.py` 中的。如果您希望隐藏敏感信息，建议修改代码，将其改为从环境变量（如 `os.environ.get("HY2_URL")`）读取，并添加到 Secrets 中。
-
-3. **按钮文本匹配**：
-   * 如果 IceHost 面板的续期按钮文案发生变动（目前默认为 `DODAJ 6 GODZIN WAŻNOŚCI`），请在 `main.py` 中找到 `RENEW_BUTTON_TEXT` 变量，修改为最新的按钮文字。
-
-4. **日志分支管理**：
-   * 脚本默认基于 `main` 分支运行。如果您修改了分支名称，请同步修改 `.github/workflows/renew.yml` 中 `git push origin` 的目标分支。
