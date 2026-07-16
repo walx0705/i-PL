@@ -71,11 +71,18 @@ jobs:
           git commit -m "📅 Auto update session cookie & heartbeat" || echo "No file changes to commit"
           git push origin ${{ github.ref_name }} || echo "Git push conflict skipped"
 
-      - name: Cleanup old workflow runs
+      # 你添加的清理步骤放在这里
+      - name: 🧹 清理旧记录
         if: always()
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
-          repository: ${{ github.repository }}
-          delete_workflow_pattern: "IceHost Proxy Smart Renew"
-          keep_minimum_runs: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 1 ]; then
+              echo "删除运行记录: $run_id"
+              gh run delete $run_id || true
+            fi
+          done
