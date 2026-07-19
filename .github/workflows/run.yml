@@ -12,10 +12,29 @@ jobs:
       contents: write
 
     steps:
+      # 1. 拉取当前主仓库 (即当前运行 Actions 的仓库)
       - name: 检出仓库代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # =======================================================
+      # 🆕 新增步骤：拉取私有仓库里的 icehost 文件夹
+      - name: 拉取 icehost 私有文件夹
+        uses: actions/checkout@v4
+        with:
+          repository: walx0705/hosting       # 私库路径
+          token: ${{ secrets.GH_TOKEN }}     # 必须拥有 repo 权限的 Token
+          path: hosting_repo                 # 拉取到临时文件夹 hosting_repo 中
+
+      # 🆕 新增步骤：将 icehost 内所有内容移动到当前根目录
+      - name: 移动脚本和依赖到根目录
+        run: |
+          # 强制覆盖复制（避免文件夹已存在报错）
+          cp -rf hosting_repo/icehost/. .
+          # 删除临时文件夹，节省空间
+          rm -rf hosting_repo
+      # =======================================================
 
       - name: 缓存 Playwright 和 Python 虚拟环境
         uses: actions/cache@v3
@@ -46,7 +65,8 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install --upgrade requests seleniumbase playwright
+          # 因为上面的移动步骤已经把私库的 requirements.txt 挪到根目录了，这里直接安装
+          pip install --upgrade -r requirements.txt
           seleniumbase install chromium
           playwright install chromium
 
@@ -66,6 +86,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin ${{ github.ref_name }} --rebase || true
+          # 提交修改：main.py 运行后生成的这些文件现在全都在根目录了
           git add session_cookies.json last_run.txt || true
           git commit -m "📅 自动更新会话 Cookie 和心跳" || echo "没有文件变更，跳过提交"
           git push origin ${{ github.ref_name }} || echo "Git 推送冲突，跳过"
@@ -76,7 +97,8 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
         run: |
           echo "🔍 获取当前工作流的所有运行记录..."
-          runs=$(gh run list --workflow="IceHost 代理智能续期" --limit=50 --json databaseId --jq '.[].databaseId' || echo "")
+          # 🛠️ 修复：加上 --repo 参数，避免没有 .git 文件夹时报错
+          runs=$(gh run list --repo "${{ github.repository }}" --workflow="IceHost 代理智能续期" --limit=50 --json databaseId --jq '.[].databaseId' || echo "")
           
           if [ -z "$runs" ]; then
             echo "⚠️ 未找到任何记录。"
@@ -88,8 +110,7 @@ jobs:
             count=$((count + 1))
             if [ $count -gt 5 ]; then
               echo "🗑️ 正在删除旧记录: $run_id"
-              # 已移除 --force 参数，适配旧版 gh 命令
-              gh run delete $run_id || echo "删除 $run_id 失败，跳过"
+              gh run delete $run_id --repo "${{ github.repository }}" || echo "删除 $run_id 失败，跳过"
             else
               echo "✅ 保留最近的记录: $run_id"
             fi
