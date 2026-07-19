@@ -12,14 +12,15 @@ jobs:
       contents: write
 
     steps:
-      - name: 检出主仓库代码（用于下载 hysteria 到根目录）
+      # 1. 拉取当前运行 YAML 的主仓库（方便下载二进制）
+      - name: 检出主仓库代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       # =======================================================
-      # 1. 拉取私库，直接存为 icehost 文件夹
-      - name: 拉取私库 hosting 的 icehost 文件夹
+      # 2. 拉取私库，直接放在 icehost 文件夹里
+      - name: 拉取 icehost 私有文件夹
         uses: actions/checkout@v4
         with:
           repository: walx0705/hosting
@@ -27,13 +28,12 @@ jobs:
           path: icehost
       # =======================================================
 
-      - name: 缓存 Playwright 和 Python 虚拟环境
+      - name: 缓存 Playwright 二进制文件
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.cache/ms-playwright
-            venv
-          key: full-cache-${{ hashFiles('icehost/requirements.txt') }}
+          path: ~/.cache/ms-playwright
+          # 注意：去掉了 venv 的缓存，避免损坏导致报错 127
+          key: playwright-cache-${{ hashFiles('icehost/requirements.txt') }}
 
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
@@ -45,55 +45,54 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
 
-      - name: 下载 Hysteria 二进制文件到根目录
+      - name: 下载 Hysteria 二进制文件
         run: |
           wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
             https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 \
             -O hysteria
           chmod +x hysteria
+          # 放到私库文件夹里备用
+          cp hysteria icehost/hysteria
 
-      - name: 将 Hysteria 移动到私库目录中
-        run: cp hysteria icehost/hysteria
-
-      - name: 安装 Python 依赖 (读取私库中的 requirements.txt)
+      # =======================================================
+      # 修复点：删掉 venv，直接在系统 Python 中安装
+      - name: 安装 Python 依赖 (修复 venv 报错)
         run: |
-          python -m venv venv
-          source venv/bin/activate
           pip install --upgrade -r icehost/requirements.txt
           seleniumbase install chromium
           playwright install chromium
+      # =======================================================
 
-      - name: 在私库目录内运行续期脚本
+      # =======================================================
+      # 修改点：进入到 icehost 文件夹里面去运行 main.py
+      - name: 在虚拟显示器中运行续期脚本
         env:
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          source venv/bin/activate
-          # 关键：cd 进入私库文件夹运行，生成的 json/txt 会在私库文件夹里
           cd icehost
           xvfb-run --auto-servernum python -u main.py
+      # =======================================================
 
       # =======================================================
-      # 2. 提交更新到私库 (walx0705/hosting)
+      # 修改点：在 icehost 文件夹内部提交回私库
       - name: 提交 Cookie 和心跳文件到私库
         if: always()
         run: |
           cd icehost
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # 拉取上游最新代码防止冲突
           git pull origin main --rebase || true
           git add session_cookies.json last_run.txt || true
           git commit -m "📅 自动更新会话 Cookie 和心跳" || echo "没有文件变更，跳过提交"
-          # 将远程仓库地址切换为带 token 的私库地址，并推送到 main
           git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/walx0705/hosting.git
           git push origin main
       # =======================================================
 
       # =======================================================
-      # 3. 清理当前公开库的旧记录（加 --repo 避免找不到 .git 报错）
+      # 修复点：清理当前公开库的旧记录，指定 --repo 防止找不到 .git 报错
       - name: 🗑️ 彻底清理旧记录（保留最近5次）
         if: always()
         env:
