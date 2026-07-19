@@ -12,28 +12,19 @@ jobs:
       contents: write
 
     steps:
-      # 1. 拉取当前主仓库 (即当前运行 Actions 的仓库)
-      - name: 检出仓库代码
+      - name: 检出主仓库代码（用于下载 hysteria 到根目录）
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       # =======================================================
-      # 🆕 新增步骤：拉取私有仓库里的 icehost 文件夹
-      - name: 拉取 icehost 私有文件夹
+      # 1. 拉取私库，直接存为 icehost 文件夹
+      - name: 拉取私库 hosting 的 icehost 文件夹
         uses: actions/checkout@v4
         with:
-          repository: walx0705/hosting       # 私库路径
-          token: ${{ secrets.GH_TOKEN }}     # 必须拥有 repo 权限的 Token
-          path: hosting_repo                 # 拉取到临时文件夹 hosting_repo 中
-
-      # 🆕 新增步骤：将 icehost 内所有内容移动到当前根目录
-      - name: 移动脚本和依赖到根目录
-        run: |
-          # 强制覆盖复制（避免文件夹已存在报错）
-          cp -rf hosting_repo/icehost/. .
-          # 删除临时文件夹，节省空间
-          rm -rf hosting_repo
+          repository: walx0705/hosting
+          token: ${{ secrets.GH_TOKEN }}
+          path: icehost
       # =======================================================
 
       - name: 缓存 Playwright 和 Python 虚拟环境
@@ -42,7 +33,7 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             venv
-          key: full-cache-${{ hashFiles('requirements.txt') }}
+          key: full-cache-${{ hashFiles('icehost/requirements.txt') }}
 
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
@@ -54,23 +45,25 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libnss3 libasound2t64 libgbm1
 
-      - name: 下载 Hysteria 二进制文件
+      - name: 下载 Hysteria 二进制文件到根目录
         run: |
           wget --retry-connrefused --waitretry=3 --read-timeout=20 --timeout=15 -t 3 \
             https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 \
             -O hysteria
           chmod +x hysteria
 
-      - name: 安装 Python 依赖
+      - name: 将 Hysteria 移动到私库目录中
+        run: cp hysteria icehost/hysteria
+
+      - name: 安装 Python 依赖 (读取私库中的 requirements.txt)
         run: |
           python -m venv venv
           source venv/bin/activate
-          # 因为上面的移动步骤已经把私库的 requirements.txt 挪到根目录了，这里直接安装
-          pip install --upgrade -r requirements.txt
+          pip install --upgrade -r icehost/requirements.txt
           seleniumbase install chromium
           playwright install chromium
 
-      - name: 在虚拟显示器中运行续期脚本
+      - name: 在私库目录内运行续期脚本
         env:
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
@@ -78,41 +71,42 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           source venv/bin/activate
+          # 关键：cd 进入私库文件夹运行，生成的 json/txt 会在私库文件夹里
+          cd icehost
           xvfb-run --auto-servernum python -u main.py
 
-      - name: 保存 Cookie 和心跳文件
+      # =======================================================
+      # 2. 提交更新到私库 (walx0705/hosting)
+      - name: 提交 Cookie 和心跳文件到私库
         if: always()
         run: |
+          cd icehost
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin ${{ github.ref_name }} --rebase || true
-          # 提交修改：main.py 运行后生成的这些文件现在全都在根目录了
+          # 拉取上游最新代码防止冲突
+          git pull origin main --rebase || true
           git add session_cookies.json last_run.txt || true
           git commit -m "📅 自动更新会话 Cookie 和心跳" || echo "没有文件变更，跳过提交"
-          git push origin ${{ github.ref_name }} || echo "Git 推送冲突，跳过"
+          # 将远程仓库地址切换为带 token 的私库地址，并推送到 main
+          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/walx0705/hosting.git
+          git push origin main
+      # =======================================================
 
+      # =======================================================
+      # 3. 清理当前公开库的旧记录（加 --repo 避免找不到 .git 报错）
       - name: 🗑️ 彻底清理旧记录（保留最近5次）
         if: always()
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_CLEAN_TOKEN }}
         run: |
-          echo "🔍 获取当前工作流的所有运行记录..."
-          # 🛠️ 修复：加上 --repo 参数，避免没有 .git 文件夹时报错
           runs=$(gh run list --repo "${{ github.repository }}" --workflow="IceHost 代理智能续期" --limit=50 --json databaseId --jq '.[].databaseId' || echo "")
-          
-          if [ -z "$runs" ]; then
-            echo "⚠️ 未找到任何记录。"
-            exit 0
-          fi
-
+          if [ -z "$runs" ]; then exit 0; fi
           count=0
           for run_id in $runs; do
             count=$((count + 1))
             if [ $count -gt 5 ]; then
-              echo "🗑️ 正在删除旧记录: $run_id"
-              gh run delete $run_id --repo "${{ github.repository }}" || echo "删除 $run_id 失败，跳过"
-            else
-              echo "✅ 保留最近的记录: $run_id"
+              echo "🗑️ 删除旧记录: $run_id"
+              gh run delete $run_id --repo "${{ github.repository }}" || true
             fi
           done
-          echo "✨ 清理完成！"
+      # =======================================================
