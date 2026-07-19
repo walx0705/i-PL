@@ -12,28 +12,26 @@ jobs:
       contents: write
 
     steps:
-      # 1. 拉取当前运行 YAML 的主仓库（方便下载二进制）
       - name: 检出主仓库代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       # =======================================================
-      # 2. 拉取私库，直接放在 icehost 文件夹里
+      # 改动1：把私库拉取到 hosting_repo 文件夹，避免路径嵌套
       - name: 拉取 icehost 私有文件夹
         uses: actions/checkout@v4
         with:
           repository: walx0705/hosting
           token: ${{ secrets.GH_TOKEN }}
-          path: icehost
+          path: hosting_repo
       # =======================================================
 
       - name: 缓存 Playwright 二进制文件
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
-          # 注意：去掉了 venv 的缓存，避免损坏导致报错 127
-          key: playwright-cache-${{ hashFiles('icehost/requirements.txt') }}
+          key: playwright-cache-${{ hashFiles('hosting_repo/icehost/requirements.txt') }}
 
       - name: 设置 Python 3.11
         uses: actions/setup-python@v5
@@ -51,20 +49,20 @@ jobs:
             https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 \
             -O hysteria
           chmod +x hysteria
-          # 放到私库文件夹里备用
-          cp hysteria icehost/hysteria
+          # 移动到对应的子文件夹下
+          cp hysteria hosting_repo/icehost/hysteria
 
       # =======================================================
-      # 修复点：删掉 venv，直接在系统 Python 中安装
-      - name: 安装 Python 依赖 (修复 venv 报错)
+      # 改动2：依赖路径修正为 hosting_repo/icehost/requirements.txt
+      - name: 安装 Python 依赖
         run: |
-          pip install --upgrade -r icehost/requirements.txt
+          pip install --upgrade -r hosting_repo/icehost/requirements.txt
           seleniumbase install chromium
           playwright install chromium
       # =======================================================
 
       # =======================================================
-      # 修改点：进入到 icehost 文件夹里面去运行 main.py
+      # 改动3：先 cd 进入真正的脚本目录 hosting_repo/icehost 再运行
       - name: 在虚拟显示器中运行续期脚本
         env:
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
@@ -72,16 +70,16 @@ jobs:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          cd icehost
+          cd hosting_repo/icehost
           xvfb-run --auto-servernum python -u main.py
       # =======================================================
 
       # =======================================================
-      # 修改点：在 icehost 文件夹内部提交回私库
+      # 改动4：在此目录下提交回私库
       - name: 提交 Cookie 和心跳文件到私库
         if: always()
         run: |
-          cd icehost
+          cd hosting_repo/icehost
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin main --rebase || true
@@ -91,8 +89,6 @@ jobs:
           git push origin main
       # =======================================================
 
-      # =======================================================
-      # 修复点：清理当前公开库的旧记录，指定 --repo 防止找不到 .git 报错
       - name: 🗑️ 彻底清理旧记录（保留最近5次）
         if: always()
         env:
@@ -108,4 +104,3 @@ jobs:
               gh run delete $run_id --repo "${{ github.repository }}" || true
             fi
           done
-      # =======================================================
